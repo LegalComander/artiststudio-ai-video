@@ -24,8 +24,8 @@ private:
 };
 
 class NeonRackEditor final : public juce::AudioProcessorEditor,
-                             private juce::DragAndDropContainer,
-                             private juce::DragAndDropTarget,
+                             public juce::DragAndDropContainer,
+                             public juce::DragAndDropTarget,
                              private juce::Timer
 {
 public:
@@ -92,14 +92,12 @@ private:
     std::array<juce::Label, 4> macroLabels;
     std::array<std::unique_ptr<SliderAttachment>, 4> macroAttachments;
 
-    // Per-module host-sync controls shown for Chorus, Delay and Phaser.
     juce::ToggleButton moduleSyncToggle { "HOST SYNC" };
     juce::ComboBox moduleDivision;
     juce::Label moduleSyncLabel;
     std::unique_ptr<ButtonAttachment> moduleSyncAttachment;
     std::unique_ptr<ComboBoxAttachment> moduleDivisionAttachment;
 
-    // Global LFO / modulation strip.
     juce::ToggleButton lfoOn { "LFO" };
     juce::ToggleButton lfoSync { "SYNC" };
     juce::Slider lfoRate;
