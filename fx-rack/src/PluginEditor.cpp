@@ -56,7 +56,7 @@ NeonRackEditor::NeonRackEditor (NeonRackProcessor& p)
     selectedTitle.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
 
     configureLabel (hint,
-                    "Select a module to edit. Use ▲ / ▼ to reorder; BYPASS keeps it in the chain without processing.",
+                    "Select a module to edit. Use UP / DN to reorder; BYPASS keeps it in the chain without processing.",
                     juce::Justification::centredLeft);
     hint.setColour (juce::Label::textColourId, muted);
     hint.setFont (juce::Font (juce::FontOptions (11.5f)));
@@ -86,10 +86,14 @@ NeonRackEditor::NeonRackEditor (NeonRackProcessor& p)
         };
 
         editButtons[(size_t) i].setButtonText ("EDIT");
-        upButtons[(size_t) i].setButtonText ("▲");
-        downButtons[(size_t) i].setButtonText ("▼");
-        removeButtons[(size_t) i].setButtonText ("×");
+        upButtons[(size_t) i].setButtonText ("UP");
+        downButtons[(size_t) i].setButtonText ("DN");
+        removeButtons[(size_t) i].setButtonText ("X");
         bypassButtons[(size_t) i].setButtonText ("BYPASS");
+
+        upButtons[(size_t) i].setTooltip ("Move effect up");
+        downButtons[(size_t) i].setTooltip ("Move effect down");
+        removeButtons[(size_t) i].setTooltip ("Remove effect from rack");
 
         configureSmallButton (editButtons[(size_t) i]);
         configureSmallButton (upButtons[(size_t) i]);
