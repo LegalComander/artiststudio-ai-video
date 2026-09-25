@@ -2,7 +2,7 @@
 
 Standalone Windows-first version of ArtistStudio Stem Lab.
 
-## v0.1 scope
+## v0.2 scope
 
 - Blue/cyan neon JUCE desktop interface
 - Drag/drop or choose WAV, MP3, FLAC, AIFF
@@ -13,6 +13,10 @@ Standalone Windows-first version of ArtistStudio Stem Lab.
 - Vocals / drums / bass / other WAV output
 - Fast `htdemucs` and maximum-quality `htdemucs_ft` modes
 - No Replicate/API requirement for desktop separation
+- In-app **Install Local AI** setup
+- Private ArtistStudio-managed Python environment under the user's application-data folder
+- Automatic Demucs 4.1.0 installation and verification
+- Automatic Python 3.12 installation through Windows Package Manager when Python is missing and `winget` is available
 
 ## Architecture
 
@@ -20,54 +24,66 @@ Standalone Windows-first version of ArtistStudio Stem Lab.
 Desktop UI (JUCE)
   -> TrackAnalyzer (C++ / JUCE DSP)
   -> StemEngine
-       -> local Python/Demucs for v0.1
+       -> ArtistStudio-managed local Python environment
+       -> Demucs 4.1.0
        -> ONNX/native engine later
   -> WAV stems in Documents/ArtistStudio Stem Lab/Stems
 ```
 
-The stem engine is deliberately isolated so the temporary Python/Demucs runner can later be replaced with ONNX Runtime or another native inference backend without redesigning the UI.
+The stem engine is isolated from the UI so it can later be reused by the VST3 target and eventually swapped for a native ONNX Runtime backend without redesigning the product.
+
+## First-run user flow
+
+1. Open **ArtistStudio Stem Lab**.
+2. Press **Install Local AI** once.
+3. Stem Lab creates a private AI environment and installs Demucs locally.
+4. The button changes to **AI Engine Ready** after verification.
+5. Drop in a track and press **Separate 4 Stems**.
+
+No Replicate token or cloud account is required for desktop separation. Internet access is required for the one-time local AI dependency download.
+
+If Python is already installed, Stem Lab uses it only to create its own private environment. It does not install Demucs into the user's normal Python environment.
 
 ## Windows build
 
 Requirements:
 
-- Visual Studio 2022 with Desktop development with C++
+- Visual Studio with Desktop development with C++
 - CMake 3.22+
 - Internet access during configure so CMake can fetch JUCE 9.0.2
 
-From the repository root:
+From the repository root on a current Visual Studio 2026 system:
 
 ```powershell
-cmake -S desktop -B desktop/build -G "Visual Studio 17 2022" -A x64
+cmake -S desktop -B desktop/build -G "Visual Studio 18 2026" -A x64
 cmake --build desktop/build --config Release
 ```
 
 The executable is created under the CMake artefacts directory in `desktop/build`.
 
-## Enable local AI separation
+## Output
 
-For the first development release, Demucs is launched locally. Run:
+Completed stems are written to:
 
-```powershell
-powershell -ExecutionPolicy Bypass -File desktop/scripts/install-demucs.ps1
+```text
+Documents/ArtistStudio Stem Lab/Stems/<model>/<track name>/
 ```
 
-or manually:
+with:
 
-```powershell
-py -3 -m pip install -U demucs
-```
-
-Then start ArtistStudio Stem Lab, load a track and press **Separate 4 Stems**.
+- `vocals.wav`
+- `drums.wav`
+- `bass.wav`
+- `other.wav`
 
 ## Next milestones
 
-1. CI-build downloadable Windows EXE.
-2. Add original/stem audio preview, solo and mute.
-3. Add progress reporting/cancel for Demucs.
-4. Bundle the model/runtime so users do not need Python.
-5. Reuse the engine/UI system for the VST3 target.
-6. Add drag-export into DAWs and multi-output VST routing.
+1. Add original/stem audio preview with solo and mute.
+2. Add live separation progress and a Cancel button.
+3. Add GPU/runtime diagnostics and memory-aware settings for laptop GPUs.
+4. Add drag-export into DAWs.
+5. Create the VST3 target using the same analyzer and stem engine.
+6. Replace the Python runner with a native/bundled inference backend when the model/runtime packaging is production-ready.
 
 ## Notes
 
