@@ -1,0 +1,44 @@
+name: Build ArtistStudio NEONRACK FX
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "fx-rack/**"
+      - ".github/workflows/fx-rack-windows.yml"
+  pull_request:
+    paths:
+      - "fx-rack/**"
+      - ".github/workflows/fx-rack-windows.yml"
+
+jobs:
+  windows-vst3:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S fx-rack -B fx-rack/build -G "Visual Studio 18 2026" -A x64
+
+      - name: Build Release
+        run: cmake --build fx-rack/build --config Release --parallel 2
+
+      - name: Collect VST3
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path fx-rack/dist | Out-Null
+          $vst = Get-ChildItem -Path fx-rack/build -Recurse | Where-Object { $_.Name -eq "ArtistStudio NEONRACK FX.vst3" } | Select-Object -First 1
+          if (-not $vst) { throw "ArtistStudio NEONRACK FX.vst3 was not found after the build." }
+          Copy-Item $vst.FullName "fx-rack/dist/ArtistStudio NEONRACK FX.vst3" -Recurse
+          Copy-Item "fx-rack/README.md" "fx-rack/dist/README.md"
+
+      - name: Upload Windows VST3
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArtistStudio-NEONRACK-FX-Windows
+          path: fx-rack/dist/
+          if-no-files-found: error
