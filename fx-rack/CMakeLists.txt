@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(ArtistStudioNeonRack VERSION 0.2.1 LANGUAGES C CXX)
+project(ArtistStudioNeonRack VERSION 0.2.2 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -50,6 +50,12 @@ target_compile_definitions(ArtistStudioNeonRack PRIVATE
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
+
+if(MSVC)
+    # Keep all UI/source strings deterministic on Windows regardless of the
+    # runner or local machine's legacy code page.
+    target_compile_options(ArtistStudioNeonRack PRIVATE /utf-8)
+endif()
 
 target_link_libraries(ArtistStudioNeonRack PRIVATE
     juce::juce_audio_processors
