@@ -31,6 +31,8 @@ private:
     void chooseFile();
     void loadFile (const juce::File& file);
     void analyzeCurrentTrack();
+    void installLocalEngine();
+    void refreshEngineButton();
     void separateCurrentTrack();
     void updateStemStatus (const StemSeparationResult& result);
     void setStatus (juce::String text, juce::Colour colour = juce::Colour (0xff86a9bc));
@@ -57,6 +59,7 @@ private:
 
     juce::TextButton chooseButton { "Choose Track" };
     juce::TextButton analyzeButton { "Analyze BPM + Key" };
+    juce::TextButton engineButton { "Install Local AI" };
     juce::TextButton separateButton { "Separate 4 Stems" };
     juce::TextButton outputButton { "Open Output Folder" };
     juce::ToggleButton maximumQuality { "Maximum quality (slower)" };

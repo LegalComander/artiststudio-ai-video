@@ -3,6 +3,8 @@ name: Build ArtistStudio Stem Lab Desktop
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     paths:
       - "desktop/**"
       - ".github/workflows/desktop-windows.yml"
