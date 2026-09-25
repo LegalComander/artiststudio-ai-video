@@ -21,6 +21,8 @@ juce_add_gui_app(ArtistStudioStemLab
     BUNDLE_ID "com.artiststudio.stemlab"
 )
 
+juce_generate_juce_header(ArtistStudioStemLab)
+
 target_sources(ArtistStudioStemLab PRIVATE
     src/Main.cpp
     src/MainComponent.cpp
