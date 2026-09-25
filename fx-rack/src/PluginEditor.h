@@ -25,7 +25,7 @@ private:
     void rebuildControls();
     void configureKnob (juce::Slider&, juce::Colour accent);
     void configureLabel (juce::Label&, const juce::String&, juce::Justification = juce::Justification::centred);
-    void configureSmallButton (juce::Button&);
+    void configureSmallButton (juce::TextButton&);
 
     NeonRackProcessor& processor;
     int selectedSlot = 0;
