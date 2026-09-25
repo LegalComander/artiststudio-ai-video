@@ -1,4 +1,4 @@
-name: Build ArtistStudio NEONRACK FX
+name: Build and Validate ArtistStudio NEONRACK FX
 
 on:
   workflow_dispatch:
@@ -35,6 +35,17 @@ jobs:
           if (-not $vst) { throw "ArtistStudio NEONRACK FX.vst3 was not found after the build." }
           Copy-Item $vst.FullName "fx-rack/dist/ArtistStudio NEONRACK FX.vst3" -Recurse
           Copy-Item "fx-rack/README.md" "fx-rack/dist/README.md"
+
+      - name: Install pluginval
+        shell: pwsh
+        run: choco install pluginval -y --no-progress
+
+      - name: Validate VST3 host safety
+        shell: pwsh
+        run: |
+          $pluginval = (Get-Command pluginval.exe -ErrorAction Stop).Source
+          & $pluginval --strictness-level 5 --timeout-ms 60000 "${{ github.workspace }}\fx-rack\dist\ArtistStudio NEONRACK FX.vst3"
+          if ($LASTEXITCODE -ne 0) { throw "pluginval rejected NEONRACK FX with exit code $LASTEXITCODE" }
 
       - name: Upload Windows VST3
         uses: actions/upload-artifact@v4
