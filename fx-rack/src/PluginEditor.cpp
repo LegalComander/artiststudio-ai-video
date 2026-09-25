@@ -5,8 +5,10 @@ namespace
 const auto bg = juce::Colour (0xff02060c);
 const auto panel = juce::Colour (0xff07121f);
 const auto panel2 = juce::Colour (0xff091827);
+const auto panel3 = juce::Colour (0xff0b1d2e);
 const auto line = juce::Colour (0xff17384e);
 const auto cyan = juce::Colour (0xff43e9ff);
+const auto blue = juce::Colour (0xff3a7cff);
 const auto muted = juce::Colour (0xff86a8bb);
 const auto white = juce::Colour (0xffeefbff);
 }
@@ -14,10 +16,10 @@ const auto white = juce::Colour (0xffeefbff);
 NeonRackEditor::NeonRackEditor (NeonRackProcessor& p)
     : AudioProcessorEditor (&p), processor (p)
 {
-    // A fixed editor avoids host resize/peer edge-cases while the plugin is
-    // being instantiated or destroyed. We can re-introduce free resizing once
-    // the rack has passed host validation in Live/pluginval.
-    setSize (1080, 720);
+    // Keep the editor fixed while we preserve the host-safe behaviour that
+    // passed pluginval and Ableton testing. The visual rack can still feel
+    // modular without relying on host resize callbacks.
+    setSize (1120, 760);
     setOpaque (true);
 
     configureLabel (brand, "ARTISTSTUDIO / FX LAB", juce::Justification::centredLeft);
@@ -28,7 +30,7 @@ NeonRackEditor::NeonRackEditor (NeonRackProcessor& p)
     title.setColour (juce::Label::textColourId, white);
     title.setFont (juce::Font (juce::FontOptions (34.0f, juce::Font::bold)));
 
-    configureLabel (subtitle, "MODULAR MULTI-FX / HOST-SAFE BETA", juce::Justification::centredLeft);
+    configureLabel (subtitle, "MODULAR MULTI-FX / BUILD YOUR OWN CHAIN", juce::Justification::centredLeft);
     subtitle.setColour (juce::Label::textColourId, cyan);
     subtitle.setFont (juce::Font (juce::FontOptions (10.5f, juce::Font::bold)));
 
@@ -53,20 +55,20 @@ NeonRackEditor::NeonRackEditor (NeonRackProcessor& p)
 
     configureLabel (selectedTitle, "", juce::Justification::centredLeft);
     selectedTitle.setColour (juce::Label::textColourId, white);
-    selectedTitle.setFont (juce::Font (juce::FontOptions (24.0f, juce::Font::bold)));
+    selectedTitle.setFont (juce::Font (juce::FontOptions (27.0f, juce::Font::bold)));
 
     configureLabel (hint,
-                    "Select a module to edit. Use UP / DN to reorder; BYPASS keeps it in the chain without processing.",
+                    "MODULE CONTROL  |  Select an FX card, edit it here, and use UP / DN to change the signal flow.",
                     juce::Justification::centredLeft);
     hint.setColour (juce::Label::textColourId, muted);
-    hint.setFont (juce::Font (juce::FontOptions (11.5f)));
+    hint.setFont (juce::Font (juce::FontOptions (11.0f, juce::Font::bold)));
 
     for (int i = 0; i < NeonRackProcessor::numRackSlots; ++i)
     {
         auto& menu = slotMenus[(size_t) i];
-        menu.setColour (juce::ComboBox::backgroundColourId, panel2);
+        menu.setColour (juce::ComboBox::backgroundColourId, panel3);
         menu.setColour (juce::ComboBox::textColourId, white);
-        menu.setColour (juce::ComboBox::outlineColourId, line);
+        menu.setColour (juce::ComboBox::outlineColourId, juce::Colours::transparentBlack);
         menu.setColour (juce::ComboBox::arrowColourId, cyan);
         menu.addItem ("+ ADD FX", 1);
         for (int m = (int) NeonRackProcessor::Module::filter;
@@ -89,11 +91,12 @@ NeonRackEditor::NeonRackEditor (NeonRackProcessor& p)
         upButtons[(size_t) i].setButtonText ("UP");
         downButtons[(size_t) i].setButtonText ("DN");
         removeButtons[(size_t) i].setButtonText ("X");
-        bypassButtons[(size_t) i].setButtonText ("BYPASS");
+        bypassButtons[(size_t) i].setButtonText ("BYP");
 
         upButtons[(size_t) i].setTooltip ("Move effect up");
         downButtons[(size_t) i].setTooltip ("Move effect down");
         removeButtons[(size_t) i].setTooltip ("Remove effect from rack");
+        bypassButtons[(size_t) i].setTooltip ("Bypass this effect without removing it");
 
         configureSmallButton (editButtons[(size_t) i]);
         configureSmallButton (upButtons[(size_t) i]);
@@ -173,12 +176,12 @@ NeonRackEditor::NeonRackEditor (NeonRackProcessor& p)
 void NeonRackEditor::configureKnob (juce::Slider& slider, juce::Colour accent)
 {
     slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 76, 20);
+    slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 20);
     slider.setColour (juce::Slider::rotarySliderFillColourId, accent);
-    slider.setColour (juce::Slider::rotarySliderOutlineColourId, line);
+    slider.setColour (juce::Slider::rotarySliderOutlineColourId, juce::Colour (0xff173b55));
     slider.setColour (juce::Slider::thumbColourId, white);
     slider.setColour (juce::Slider::textBoxTextColourId, white);
-    slider.setColour (juce::Slider::textBoxBackgroundColourId, panel2);
+    slider.setColour (juce::Slider::textBoxBackgroundColourId, panel3);
     slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colours::transparentBlack);
     addAndMakeVisible (slider);
 }
@@ -196,7 +199,7 @@ void NeonRackEditor::configureLabel (juce::Label& label,
 
 void NeonRackEditor::configureSmallButton (juce::TextButton& button)
 {
-    button.setColour (juce::TextButton::buttonColourId, panel2);
+    button.setColour (juce::TextButton::buttonColourId, panel3);
     button.setColour (juce::TextButton::buttonOnColourId, juce::Colour (0xff12344b));
     button.setColour (juce::TextButton::textColourOffId, white);
     button.setColour (juce::TextButton::textColourOnId, cyan);
@@ -207,94 +210,174 @@ void NeonRackEditor::paint (juce::Graphics& g)
 {
     g.fillAll (bg);
 
-    juce::ColourGradient gradient (juce::Colour (0xff0a2d49), 0.0f, 0.0f,
-                                   bg, (float) getWidth(), (float) getHeight(), false);
-    gradient.addColour (0.42, juce::Colour (0xff06101b));
-    g.setGradientFill (gradient);
+    juce::ColourGradient background (juce::Colour (0xff0a2943), 0.0f, 0.0f,
+                                     bg, (float) getWidth(), (float) getHeight(), false);
+    background.addColour (0.32, juce::Colour (0xff061523));
+    background.addColour (0.70, juce::Colour (0xff040a11));
+    g.setGradientFill (background);
     g.fillRect (getLocalBounds());
 
-    auto content = getLocalBounds().reduced (18);
-    auto header = content.removeFromTop (122).toFloat();
-    g.setColour (juce::Colour (0xff06111d));
+    // Header / macro strip.
+    auto content = getLocalBounds().reduced (16);
+    auto header = content.removeFromTop (138).toFloat();
+    g.setColour (juce::Colour (0xff04101b));
     g.fillRoundedRectangle (header, 18.0f);
-    g.setColour (cyan.withAlpha (0.25f));
+    g.setColour (cyan.withAlpha (0.22f));
     g.drawRoundedRectangle (header, 18.0f, 1.0f);
 
-    content.removeFromTop (14);
-    auto rack = content.removeFromLeft (338).toFloat();
-    g.setColour (panel);
-    g.fillRoundedRectangle (rack, 18.0f);
-    g.setColour (line);
-    g.drawRoundedRectangle (rack, 18.0f, 1.0f);
+    g.setColour (cyan.withAlpha (0.65f));
+    g.fillRoundedRectangle (header.removeFromBottom (3.0f), 1.5f);
 
-    content.removeFromLeft (14);
-    auto controls = content.toFloat();
-    g.setColour (juce::Colour (0xff06101b));
-    g.fillRoundedRectangle (controls, 18.0f);
-    g.setColour (NeonRackProcessor::moduleColour (selectedModule).withAlpha (0.35f));
-    g.drawRoundedRectangle (controls, 18.0f, 1.3f);
+    // Small cards behind macros and global controls.
+    for (const auto& label : macroLabels)
+    {
+        const auto index = (size_t) (&label - &macroLabels[0]);
+        auto card = label.getBounds().getUnion (macroKnobs[index].getBounds()).expanded (6, 4).toFloat();
+        g.setColour (panel2.withAlpha (0.80f));
+        g.fillRoundedRectangle (card, 10.0f);
+        g.setColour (line.withAlpha (0.72f));
+        g.drawRoundedRectangle (card, 10.0f, 1.0f);
+    }
+
+    auto mixCard = globalMixLabel.getBounds().getUnion (globalMix.getBounds()).expanded (6, 4).toFloat();
+    auto outCard = outputLabel.getBounds().getUnion (output.getBounds()).expanded (6, 4).toFloat();
+    g.setColour (panel2.withAlpha (0.80f));
+    g.fillRoundedRectangle (mixCard, 10.0f);
+    g.fillRoundedRectangle (outCard, 10.0f);
+    g.setColour (line.withAlpha (0.72f));
+    g.drawRoundedRectangle (mixCard, 10.0f, 1.0f);
+    g.drawRoundedRectangle (outCard, 10.0f, 1.0f);
+
+    // Main rack and editor panels.
+    content.removeFromTop (12);
+    auto rackPanel = content.removeFromLeft (370).toFloat();
+    g.setColour (juce::Colour (0xff04101a));
+    g.fillRoundedRectangle (rackPanel, 18.0f);
+    g.setColour (line);
+    g.drawRoundedRectangle (rackPanel, 18.0f, 1.0f);
+
+    content.removeFromLeft (12);
+    auto controlsPanel = content.toFloat();
+    g.setColour (juce::Colour (0xff04101a));
+    g.fillRoundedRectangle (controlsPanel, 18.0f);
+
+    const auto selectedAccent = selectedModule == NeonRackProcessor::Module::empty
+                                    ? cyan
+                                    : NeonRackProcessor::moduleColour (selectedModule);
+    g.setColour (selectedAccent.withAlpha (0.48f));
+    g.drawRoundedRectangle (controlsPanel, 18.0f, 1.4f);
+    g.setColour (selectedAccent.withAlpha (0.80f));
+    g.fillRoundedRectangle (controlsPanel.withHeight (3.0f).reduced (20.0f, 0.0f), 1.5f);
+
+    // Rack heading.
+    g.setColour (muted);
+    g.setFont (juce::Font (juce::FontOptions (10.5f, juce::Font::bold)));
+    g.drawText ("FX CHAIN", rackPanel.toNearestInt().withTrimmedLeft (18).removeFromTop (34),
+                juce::Justification::centredLeft, false);
+
+    // Individual FX cards. The visible card order is the true DSP order.
+    for (int i = 0; i < NeonRackProcessor::numRackSlots; ++i)
+    {
+        auto card = slotMenus[(size_t) i].getBounds()
+                        .getUnion (removeButtons[(size_t) i].getBounds())
+                        .expanded (10, 7)
+                        .toFloat();
+
+        const auto module = processor.getSlot (i);
+        const auto occupied = module != NeonRackProcessor::Module::empty;
+        const auto accent = occupied ? NeonRackProcessor::moduleColour (module) : line;
+
+        g.setColour ((i == selectedSlot ? panel3 : panel2).withAlpha (occupied ? 0.96f : 0.62f));
+        g.fillRoundedRectangle (card, 11.0f);
+
+        g.setColour ((i == selectedSlot ? accent : line).withAlpha (i == selectedSlot ? 0.88f : 0.66f));
+        g.drawRoundedRectangle (card, 11.0f, i == selectedSlot ? 1.8f : 1.0f);
+
+        auto rail = card.withWidth (4.0f).reduced (0.0f, 8.0f);
+        g.setColour (accent.withAlpha (occupied ? 0.95f : 0.32f));
+        g.fillRoundedRectangle (rail, 2.0f);
+
+        auto badge = juce::Rectangle<float> (card.getX() + 8.0f, card.getY() + 9.0f, 23.0f, 23.0f);
+        g.setColour (accent.withAlpha (occupied ? 0.18f : 0.08f));
+        g.fillEllipse (badge);
+        g.setColour (occupied ? accent : muted.withAlpha (0.55f));
+        g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
+        g.drawText (juce::String (i + 1), badge.toNearestInt(), juce::Justification::centred, false);
+    }
+
+    // Module parameter cards.
+    for (size_t i = 0; i < controlKnobs.size(); ++i)
+    {
+        auto card = controlLabels[i]->getBounds().getUnion (controlKnobs[i]->getBounds()).expanded (7, 5).toFloat();
+        g.setColour (panel2.withAlpha (0.72f));
+        g.fillRoundedRectangle (card, 13.0f);
+        g.setColour (selectedAccent.withAlpha (0.18f));
+        g.drawRoundedRectangle (card, 13.0f, 1.0f);
+    }
 }
 
 void NeonRackEditor::resized()
 {
     auto content = getLocalBounds().reduced (26);
-    auto header = content.removeFromTop (104);
+    auto header = content.removeFromTop (112);
 
-    auto brandArea = header.removeFromLeft (330);
+    auto brandArea = header.removeFromLeft (320);
     brand.setBounds (brandArea.removeFromTop (17));
     title.setBounds (brandArea.removeFromTop (40));
     subtitle.setBounds (brandArea.removeFromTop (18));
-    presetLabel.setBounds (brandArea.removeFromTop (15));
-    presetMenu.setBounds (brandArea.removeFromTop (28).withTrimmedRight (28));
+    presetLabel.setBounds (brandArea.removeFromTop (14));
+    presetMenu.setBounds (brandArea.removeFromTop (28).withTrimmedRight (22));
 
     auto macroArea = header.removeFromLeft (500);
     const int macroW = juce::jmax (1, macroArea.getWidth() / 4);
     for (int i = 0; i < 4; ++i)
     {
-        auto cell = macroArea.removeFromLeft (macroW);
+        auto cell = macroArea.removeFromLeft (macroW).reduced (4, 0);
         macroLabels[(size_t) i].setBounds (cell.removeFromTop (18));
-        macroKnobs[(size_t) i].setBounds (cell.reduced (8, 0));
+        macroKnobs[(size_t) i].setBounds (cell.reduced (5, 0));
     }
 
-    auto globals = header;
+    auto globals = header.reduced (2, 0);
     auto mixArea = globals.removeFromLeft (globals.getWidth() / 2);
     globalMixLabel.setBounds (mixArea.removeFromTop (18));
-    globalMix.setBounds (mixArea.reduced (2));
+    globalMix.setBounds (mixArea.reduced (5, 0));
     outputLabel.setBounds (globals.removeFromTop (18));
-    output.setBounds (globals.reduced (2));
+    output.setBounds (globals.reduced (5, 0));
 
-    content.removeFromTop (30);
-    auto rackArea = content.removeFromLeft (318).reduced (10);
+    content.removeFromTop (42);
+    auto rackArea = content.removeFromLeft (342).reduced (10, 4);
+    rackArea.removeFromTop (22);
     content.removeFromLeft (40);
-    auto controlArea = content.reduced (20);
+    auto controlArea = content.reduced (18, 4);
 
-    const int slotH = juce::jmax (67, rackArea.getHeight() / NeonRackProcessor::numRackSlots);
+    const int slotH = juce::jmax (76, rackArea.getHeight() / NeonRackProcessor::numRackSlots);
     for (int i = 0; i < NeonRackProcessor::numRackSlots; ++i)
     {
-        auto row = rackArea.removeFromTop (slotH).reduced (4, 5);
-        slotMenus[(size_t) i].setBounds (row.removeFromTop (30));
-        row.removeFromTop (3);
-        auto buttons = row.removeFromTop (27);
-        editButtons[(size_t) i].setBounds (buttons.removeFromLeft (50));
+        auto row = rackArea.removeFromTop (slotH).reduced (10, 7);
+        row.removeFromLeft (28);
+        slotMenus[(size_t) i].setBounds (row.removeFromTop (28));
+        row.removeFromTop (4);
+        auto buttons = row.removeFromTop (25);
+        editButtons[(size_t) i].setBounds (buttons.removeFromLeft (48));
         buttons.removeFromLeft (3);
-        bypassButtons[(size_t) i].setBounds (buttons.removeFromLeft (72));
+        bypassButtons[(size_t) i].setBounds (buttons.removeFromLeft (64));
         buttons.removeFromLeft (3);
-        upButtons[(size_t) i].setBounds (buttons.removeFromLeft (36));
+        upButtons[(size_t) i].setBounds (buttons.removeFromLeft (40));
         buttons.removeFromLeft (2);
-        downButtons[(size_t) i].setBounds (buttons.removeFromLeft (36));
+        downButtons[(size_t) i].setBounds (buttons.removeFromLeft (40));
         buttons.removeFromLeft (2);
         removeButtons[(size_t) i].setBounds (buttons.removeFromLeft (36));
     }
 
-    auto top = controlArea.removeFromTop (62);
-    selectedTitle.setBounds (top.removeFromTop (34));
-    hint.setBounds (top.removeFromTop (24));
+    auto top = controlArea.removeFromTop (72);
+    selectedTitle.setBounds (top.removeFromTop (38));
+    hint.setBounds (top.removeFromTop (25));
     controlArea.removeFromTop (12);
 
     const int columns = 3;
     const int rows = 2;
     const int cellW = juce::jmax (1, controlArea.getWidth() / columns);
-    const int cellH = juce::jmax (120, controlArea.getHeight() / rows);
+    const int cellH = juce::jmax (145, controlArea.getHeight() / rows);
 
     for (size_t i = 0; i < controlKnobs.size(); ++i)
     {
@@ -306,17 +389,17 @@ void NeonRackEditor::resized()
 
         auto cell = juce::Rectangle<int> (controlArea.getX() + col * cellW,
                                           controlArea.getY() + row * cellH,
-                                          cellW, cellH).reduced (10);
-        controlLabels[i]->setBounds (cell.removeFromTop (22));
-        controlKnobs[i]->setBounds (cell.reduced (5, 0));
+                                          cellW, cellH).reduced (14, 10);
+        controlLabels[i]->setBounds (cell.removeFromTop (24));
+        controlKnobs[i]->setBounds (cell.reduced (8, 2));
     }
 
     int toggleIndex = 0;
     for (auto& toggle : controlToggles)
     {
         toggle->setBounds (controlArea.getX() + 14,
-                           controlArea.getBottom() - 35 - toggleIndex * 34,
-                           210, 30);
+                           controlArea.getBottom() - 36 - toggleIndex * 34,
+                           220, 30);
         ++toggleIndex;
     }
 }
@@ -354,7 +437,7 @@ void NeonRackEditor::selectSlot (int slot)
     selectedSlot = juce::jlimit (0, NeonRackProcessor::numRackSlots - 1, slot);
     selectedModule = processor.getSlot (selectedSlot);
     selectedTitle.setText (selectedModule == NeonRackProcessor::Module::empty
-                               ? "EMPTY SLOT"
+                               ? "EMPTY SLOT - ADD AN EFFECT"
                                : NeonRackProcessor::moduleName (selectedModule),
                            juce::dontSendNotification);
     rebuildControls();
