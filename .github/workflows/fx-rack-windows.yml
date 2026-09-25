@@ -15,14 +15,15 @@ on:
 
 jobs:
   windows-vst3:
-    runs-on: windows-latest
+    # Build against the mature VS2022 toolchain for broader DAW compatibility.
+    runs-on: windows-2022
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S fx-rack -B fx-rack/build -G "Visual Studio 18 2026" -A x64
+        run: cmake -S fx-rack -B fx-rack/build -G "Visual Studio 17 2022" -A x64
 
       - name: Build Release
         run: cmake --build fx-rack/build --config Release --parallel 2
@@ -45,7 +46,7 @@ jobs:
         run: |
           $pluginval = "C:\ProgramData\chocolatey\lib\pluginval\tools\pluginval.exe"
           if (-not (Test-Path $pluginval)) { throw "pluginval.exe was not found at $pluginval" }
-          & $pluginval --strictness-level 5 --timeout-ms 60000 "${{ github.workspace }}\fx-rack\dist\ArtistStudio NEONRACK FX.vst3"
+          & $pluginval --strictness-level 5 --timeout-ms 60000 --verbose "${{ github.workspace }}\fx-rack\dist\ArtistStudio NEONRACK FX.vst3"
           if ($LASTEXITCODE -ne 0) { throw "pluginval rejected NEONRACK FX with exit code $LASTEXITCODE" }
 
       - name: Upload Windows VST3
