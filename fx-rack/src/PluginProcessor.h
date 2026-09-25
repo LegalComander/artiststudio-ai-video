@@ -65,6 +65,12 @@ public:
     static juce::String enabledParameter (Module);
     static juce::StringArray moduleParameterIds (Module);
     static juce::String parameterLabel (const juce::String& id);
+    static juce::StringArray tempoDivisionNames();
+    static juce::StringArray lfoTargetNames();
+
+    double getHostBpm() const noexcept { return hostBpm.load(); }
+    float getLfoVisual() const noexcept { return lfoVisual.load(); }
+    float getOutputMeter() const noexcept { return outputMeter.load(); }
 
 private:
     float value (const char* id) const;
@@ -74,6 +80,11 @@ private:
     void storeRackToState();
     void setPlainParameter (const juce::String& id, float plainValue);
     void enableAllModules();
+    void updateHostTempo();
+    void updateGlobalLfo (int samples);
+    float syncedMilliseconds (int divisionIndex) const;
+    float syncedRateHz (int divisionIndex) const;
+    float activeLfoForTarget (int targetIndex) const noexcept;
 
     static float dbToGain (float db) { return juce::Decibels::decibelsToGain (db); }
 
@@ -93,8 +104,14 @@ private:
     std::vector<float> delayL, delayR;
     int delayWrite = 0;
     float delayPhase = 0.0f;
+    double globalLfoPhase = 0.0;
+    float globalLfoSample = 0.0f;
     juce::AudioBuffer<float> dryBuffer;
     juce::AudioBuffer<float> moduleDryBuffer;
+
+    std::atomic<double> hostBpm { 120.0 };
+    std::atomic<float> lfoVisual { 0.0f };
+    std::atomic<float> outputMeter { 0.0f };
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NeonRackProcessor)
 };
