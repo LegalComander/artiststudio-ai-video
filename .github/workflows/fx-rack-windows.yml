@@ -43,7 +43,8 @@ jobs:
       - name: Validate VST3 host safety
         shell: pwsh
         run: |
-          $pluginval = (Get-Command pluginval.exe -ErrorAction Stop).Source
+          $pluginval = "C:\ProgramData\chocolatey\lib\pluginval\tools\pluginval.exe"
+          if (-not (Test-Path $pluginval)) { throw "pluginval.exe was not found at $pluginval" }
           & $pluginval --strictness-level 5 --timeout-ms 60000 "${{ github.workspace }}\fx-rack\dist\ArtistStudio NEONRACK FX.vst3"
           if ($LASTEXITCODE -ne 0) { throw "pluginval rejected NEONRACK FX with exit code $LASTEXITCODE" }
 
