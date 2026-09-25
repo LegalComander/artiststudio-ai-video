@@ -2,3 +2,6 @@ streamlit
 replicate
 requests
 gTTS
+librosa
+numpy
+soundfile
