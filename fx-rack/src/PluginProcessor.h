@@ -2,11 +2,15 @@
 
 #include <JuceHeader.h>
 #include <array>
+#include <atomic>
 #include <vector>
 
 class NeonRackProcessor final : public juce::AudioProcessor
 {
 public:
+    enum class Module : int { empty = 0, filter, rift, aura, chorus, prismDelay, orbitEQ };
+    static constexpr int numRackSlots = 6;
+
     NeonRackProcessor();
     ~NeonRackProcessor() override = default;
 
@@ -35,25 +39,40 @@ public:
     juce::AudioProcessorValueTreeState state;
     static juce::AudioProcessorValueTreeState::ParameterLayout makeLayout();
 
+    Module getSlot (int slot) const noexcept;
+    void setSlot (int slot, Module module);
+    void removeSlot (int slot);
+    void moveSlot (int from, int to);
+
+    static juce::String moduleName (Module);
+    static juce::Colour moduleColour (Module);
+    static juce::String enabledParameter (Module);
+    static juce::StringArray moduleParameterIds (Module);
+    static juce::String parameterLabel (const juce::String& id);
+
 private:
     float value (const char* id) const;
-    bool enabled (const char* id) const;
-    static float dbToGain (float db) { return juce::Decibels::decibelsToGain (db); }
-    static float sat (float x) { return std::tanh (x); }
+    bool moduleEnabled (Module module) const;
+    void processModule (Module module, juce::AudioBuffer<float>& buffer);
+    void restoreRackFromState();
+    void storeRackToState();
 
+    static float dbToGain (float db) { return juce::Decibels::decibelsToGain (db); }
+
+    std::array<std::atomic<int>, numRackSlots> rack;
     double sr = 44100.0;
 
-    std::array<float, 2> filterLP { 0.0f, 0.0f };
-    std::array<float, 2> filterPrev { 0.0f, 0.0f };
-    std::array<float, 2> auraLP { 0.0f, 0.0f };
-    std::array<float, 2> eqLowLP { 0.0f, 0.0f };
-    std::array<float, 2> eqAirLP { 0.0f, 0.0f };
+    juce::dsp::StateVariableTPTFilter<float> filter;
+    juce::dsp::Chorus<float> chorus;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> eqLow;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> eqFocus;
+    juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> eqAir;
 
-    std::vector<float> chorusL, chorusR;
+    std::array<float, 2> auraLP { 0.0f, 0.0f };
     std::vector<float> delayL, delayR;
-    int chorusWrite = 0;
     int delayWrite = 0;
-    float chorusPhase = 0.0f;
+    float delayPhase = 0.0f;
+    juce::AudioBuffer<float> dryBuffer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NeonRackProcessor)
 };
