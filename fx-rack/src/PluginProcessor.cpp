@@ -13,6 +13,7 @@ juce::NormalisableRange<float> skewed (float min, float max, float centre)
 float readInterpolated (const std::vector<float>& ring, float read)
 {
     const int size = (int) ring.size();
+    if (size <= 1) return 0.0f;
     while (read < 0.0f) read += (float) size;
     while (read >= (float) size) read -= (float) size;
     const int i0 = (int) read;
@@ -57,6 +58,15 @@ void NeonRackProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     chorus.reset();
     chorus.prepare (spec);
 
+    phaser.reset();
+    phaser.prepare (spec);
+
+    reverb.reset();
+    reverb.prepare (spec);
+
+    compressor.reset();
+    compressor.prepare (spec);
+
     eqLow.reset(); eqLow.prepare (spec);
     eqFocus.reset(); eqFocus.prepare (spec);
     eqAir.reset(); eqAir.prepare (spec);
@@ -67,6 +77,7 @@ void NeonRackProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
     delayWrite = 0;
     delayPhase = 0.0f;
     dryBuffer.setSize (2, samplesPerBlock, false, true, true);
+    moduleDryBuffer.setSize (2, samplesPerBlock, false, true, true);
 }
 
 float NeonRackProcessor::value (const char* id) const
@@ -113,12 +124,20 @@ void NeonRackProcessor::removeSlot (int slot)
 
 void NeonRackProcessor::moveSlot (int from, int to)
 {
-    if (! juce::isPositiveAndBelow (from, numRackSlots) || ! juce::isPositiveAndBelow (to, numRackSlots) || from == to)
+    if (! juce::isPositiveAndBelow (from, numRackSlots)
+        || ! juce::isPositiveAndBelow (to, numRackSlots)
+        || from == to)
         return;
-    const auto a = rack[(size_t) from].load();
-    const auto b = rack[(size_t) to].load();
-    rack[(size_t) from].store (b);
-    rack[(size_t) to].store (a);
+
+    const auto moving = rack[(size_t) from].load();
+    if (from < to)
+        for (int i = from; i < to; ++i)
+            rack[(size_t) i].store (rack[(size_t) i + 1].load());
+    else
+        for (int i = from; i > to; --i)
+            rack[(size_t) i].store (rack[(size_t) i - 1].load());
+
+    rack[(size_t) to].store (moving);
     storeRackToState();
 }
 
@@ -132,8 +151,9 @@ void NeonRackProcessor::restoreRackFromState()
 {
     for (int i = 0; i < numRackSlots; ++i)
     {
-        const auto fallback = i < 5 ? i + 1 : 0;
-        rack[(size_t) i].store ((int) state.state.getProperty ("rackSlot" + juce::String (i), fallback));
+        const int fallback = i < 5 ? i + 1 : 0;
+        const int raw = (int) state.state.getProperty ("rackSlot" + juce::String (i), fallback);
+        rack[(size_t) i].store (juce::jlimit (0, (int) Module::pulseComp, raw));
     }
 }
 
@@ -148,6 +168,8 @@ void NeonRackProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::Mi
 
     if (dryBuffer.getNumSamples() < samples || dryBuffer.getNumChannels() < channels)
         dryBuffer.setSize (channels, samples, false, false, true);
+    if (moduleDryBuffer.getNumSamples() < samples || moduleDryBuffer.getNumChannels() < channels)
+        moduleDryBuffer.setSize (channels, samples, false, false, true);
 
     for (int ch = 0; ch < channels; ++ch)
         dryBuffer.copyFrom (ch, 0, buffer, ch, 0, samples);
@@ -177,12 +199,17 @@ void NeonRackProcessor::processModule (Module module, juce::AudioBuffer<float>& 
 {
     const int channels = juce::jmin (2, buffer.getNumChannels());
     const int samples = buffer.getNumSamples();
+    const float macroDrive = value ("macroDrive");
+    const float macroSpace = value ("macroSpace");
+    const float macroMotion = value ("macroMotion");
+    const float macroTone = value ("macroTone");
 
     if (module == Module::filter)
     {
-        filter.setCutoffFrequency (value ("filterCutoff"));
-        filter.setResonance (value ("filterRes"));
-        const float drive = dbToGain (value ("filterDrive"));
+        const float cutoff = juce::jlimit (40.0f, 20000.0f, value ("filterCutoff") * std::pow (2.0f, macroTone * 1.5f));
+        filter.setCutoffFrequency (cutoff);
+        filter.setResonance (juce::jlimit (0.1f, 1.35f, value ("filterRes") + macroMotion * 0.22f));
+        const float drive = dbToGain (value ("filterDrive") + macroDrive * 12.0f);
         for (int ch = 0; ch < channels; ++ch)
         {
             auto* d = buffer.getWritePointer (ch);
@@ -196,8 +223,8 @@ void NeonRackProcessor::processModule (Module module, juce::AudioBuffer<float>& 
 
     if (module == Module::rift)
     {
-        const float drive = dbToGain (value ("riftDrive"));
-        const float fold = value ("riftFold");
+        const float drive = dbToGain (value ("riftDrive") + macroDrive * 18.0f);
+        const float fold = juce::jlimit (0.0f, 1.0f, value ("riftFold") + macroDrive * 0.25f);
         const float mix = value ("riftMix");
         for (int ch = 0; ch < channels; ++ch)
         {
@@ -217,10 +244,12 @@ void NeonRackProcessor::processModule (Module module, juce::AudioBuffer<float>& 
 
     if (module == Module::aura)
     {
-        const float heat = dbToGain (value ("auraHeat"));
-        const float warmth = value ("auraWarmth");
-        const float air = juce::Decibels::decibelsToGain (value ("auraAir")) - 1.0f;
-        const float alpha = 1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi * juce::jmap (warmth, 18000.0f, 3500.0f) / (float) sr);
+        const float heat = dbToGain (value ("auraHeat") + macroDrive * 10.0f);
+        const float warmth = juce::jlimit (0.0f, 1.0f, value ("auraWarmth") - macroTone * 0.2f);
+        const float airDb = juce::jlimit (-6.0f, 9.0f, value ("auraAir") + macroTone * 4.0f);
+        const float air = juce::Decibels::decibelsToGain (airDb) - 1.0f;
+        const float cutoff = juce::jmap (warmth, 18000.0f, 3500.0f);
+        const float alpha = 1.0f - std::exp (-2.0f * juce::MathConstants<float>::pi * cutoff / (float) sr);
         for (int ch = 0; ch < channels; ++ch)
         {
             auto* d = buffer.getWritePointer (ch);
@@ -237,11 +266,11 @@ void NeonRackProcessor::processModule (Module module, juce::AudioBuffer<float>& 
 
     if (module == Module::chorus)
     {
-        chorus.setRate (value ("chorusRate"));
-        chorus.setDepth (value ("chorusDepth"));
+        chorus.setRate (juce::jlimit (0.05f, 7.0f, value ("chorusRate") * (1.0f + macroMotion * 1.8f)));
+        chorus.setDepth (juce::jlimit (0.0f, 1.0f, value ("chorusDepth") + macroMotion * 0.45f));
         chorus.setCentreDelay (value ("chorusDelay"));
-        chorus.setFeedback (0.08f);
-        chorus.setMix (value ("chorusMix"));
+        chorus.setFeedback (0.08f + macroSpace * 0.08f);
+        chorus.setMix (juce::jlimit (0.0f, 1.0f, value ("chorusMix") + macroSpace * 0.25f));
         juce::dsp::AudioBlock<float> block (buffer);
         juce::dsp::ProcessContextReplacing<float> ctx (block);
         chorus.process (ctx);
@@ -251,11 +280,11 @@ void NeonRackProcessor::processModule (Module module, juce::AudioBuffer<float>& 
     if (module == Module::prismDelay && ! delayL.empty())
     {
         const float timeSamples = value ("delayTime") * 0.001f * (float) sr;
-        const float feedback = value ("delayFeedback");
-        const float mix = value ("delayMix");
-        const float spread = value ("delaySpread");
+        const float feedback = juce::jlimit (0.0f, 0.96f, value ("delayFeedback") + macroSpace * 0.20f);
+        const float mix = juce::jlimit (0.0f, 1.0f, value ("delayMix") + macroSpace * 0.34f);
+        const float spread = juce::jlimit (0.0f, 1.0f, value ("delaySpread") + macroMotion * 0.30f);
         const int size = (int) delayL.size();
-        const float phaseInc = 0.11f / (float) sr;
+        const float phaseInc = (0.11f + macroMotion * 0.24f) / (float) sr;
 
         for (int i = 0; i < samples; ++i)
         {
@@ -281,12 +310,69 @@ void NeonRackProcessor::processModule (Module module, juce::AudioBuffer<float>& 
 
     if (module == Module::orbitEQ)
     {
+        const float air = juce::jlimit (-12.0f, 12.0f, value ("eqAir") + macroTone * 7.0f);
+        const float focus = juce::jlimit (-12.0f, 12.0f, value ("eqFocus") + macroTone * 2.0f);
         eqLow.state = juce::dsp::IIR::Coefficients<float>::makeLowShelf (sr, value ("eqLowFreq"), 0.7071f, dbToGain (value ("eqLow")));
-        eqFocus.state = juce::dsp::IIR::Coefficients<float>::makePeakFilter (sr, value ("eqFocusFreq"), value ("eqFocusQ"), dbToGain (value ("eqFocus")));
-        eqAir.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf (sr, 9500.0, 0.7071f, dbToGain (value ("eqAir")));
+        eqFocus.state = juce::dsp::IIR::Coefficients<float>::makePeakFilter (sr, value ("eqFocusFreq"), value ("eqFocusQ"), dbToGain (focus));
+        eqAir.state = juce::dsp::IIR::Coefficients<float>::makeHighShelf (sr, 9500.0, 0.7071f, dbToGain (air));
         juce::dsp::AudioBlock<float> block (buffer);
         juce::dsp::ProcessContextReplacing<float> ctx (block);
         eqLow.process (ctx); eqFocus.process (ctx); eqAir.process (ctx);
+        return;
+    }
+
+    if (module == Module::photonPhaser)
+    {
+        phaser.setRate (juce::jlimit (0.05f, 8.0f, value ("phaserRate") * (1.0f + macroMotion * 2.0f)));
+        phaser.setDepth (juce::jlimit (0.0f, 1.0f, value ("phaserDepth") + macroMotion * 0.35f));
+        phaser.setCentreFrequency (value ("phaserCentre"));
+        phaser.setFeedback (value ("phaserFeedback"));
+        phaser.setMix (juce::jlimit (0.0f, 1.0f, value ("phaserMix") + macroSpace * 0.15f));
+        juce::dsp::AudioBlock<float> block (buffer);
+        juce::dsp::ProcessContextReplacing<float> ctx (block);
+        phaser.process (ctx);
+        return;
+    }
+
+    if (module == Module::spaceReverb)
+    {
+        juce::dsp::Reverb::Parameters rp;
+        rp.roomSize = juce::jlimit (0.0f, 1.0f, value ("reverbSize") + macroSpace * 0.25f);
+        rp.damping = value ("reverbDamping");
+        rp.width = value ("reverbWidth");
+        const float wet = juce::jlimit (0.0f, 1.0f, value ("reverbMix") + macroSpace * 0.45f);
+        rp.wetLevel = wet;
+        rp.dryLevel = 1.0f - wet * 0.65f;
+        rp.freezeMode = value ("reverbFreeze") >= 0.5f ? 1.0f : 0.0f;
+        reverb.setParameters (rp);
+        juce::dsp::AudioBlock<float> block (buffer);
+        juce::dsp::ProcessContextReplacing<float> ctx (block);
+        reverb.process (ctx);
+        return;
+    }
+
+    if (module == Module::pulseComp)
+    {
+        for (int ch = 0; ch < channels; ++ch)
+            moduleDryBuffer.copyFrom (ch, 0, buffer, ch, 0, samples);
+
+        compressor.setThreshold (value ("compThreshold"));
+        compressor.setRatio (value ("compRatio"));
+        compressor.setAttack (value ("compAttack"));
+        compressor.setRelease (value ("compRelease"));
+        juce::dsp::AudioBlock<float> block (buffer);
+        juce::dsp::ProcessContextReplacing<float> ctx (block);
+        compressor.process (ctx);
+
+        const float makeup = dbToGain (value ("compMakeup") + macroDrive * 2.0f);
+        const float mix = value ("compMix");
+        for (int ch = 0; ch < channels; ++ch)
+        {
+            auto* wet = buffer.getWritePointer (ch);
+            const auto* dry = moduleDryBuffer.getReadPointer (ch);
+            for (int i = 0; i < samples; ++i)
+                wet[i] = dry[i] + (wet[i] * makeup - dry[i]) * mix;
+        }
     }
 }
 
@@ -298,6 +384,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeonRackProcessor::makeLayou
 
     p.add (std::make_unique<F> (juce::ParameterID { "globalMix", 1 }, "Global Mix", 0.0f, 1.0f, 1.0f));
     p.add (std::make_unique<F> (juce::ParameterID { "output", 1 }, "Output", -18.0f, 6.0f, 0.0f));
+    p.add (std::make_unique<F> (juce::ParameterID { "macroDrive", 1 }, "Macro Drive", 0.0f, 1.0f, 0.0f));
+    p.add (std::make_unique<F> (juce::ParameterID { "macroSpace", 1 }, "Macro Space", 0.0f, 1.0f, 0.0f));
+    p.add (std::make_unique<F> (juce::ParameterID { "macroMotion", 1 }, "Macro Motion", 0.0f, 1.0f, 0.0f));
+    p.add (std::make_unique<F> (juce::ParameterID { "macroTone", 1 }, "Macro Tone", -1.0f, 1.0f, 0.0f));
 
     p.add (std::make_unique<B> (juce::ParameterID { "filterOn", 1 }, "Filter On", true));
     p.add (std::make_unique<F> (juce::ParameterID { "filterCutoff", 1 }, "Cutoff", skewed (40.0f, 20000.0f, 1800.0f), 12000.0f));
@@ -333,6 +423,29 @@ juce::AudioProcessorValueTreeState::ParameterLayout NeonRackProcessor::makeLayou
     p.add (std::make_unique<F> (juce::ParameterID { "eqFocusFreq", 1 }, "Focus Frequency", skewed (180.0f, 8000.0f, 1600.0f), 1600.0f));
     p.add (std::make_unique<F> (juce::ParameterID { "eqFocusQ", 1 }, "Focus Q", 0.3f, 4.0f, 0.9f));
     p.add (std::make_unique<F> (juce::ParameterID { "eqAir", 1 }, "Air", -12.0f, 12.0f, 0.0f));
+
+    p.add (std::make_unique<B> (juce::ParameterID { "phaserOn", 1 }, "PHOTON Phaser On", true));
+    p.add (std::make_unique<F> (juce::ParameterID { "phaserRate", 1 }, "Phaser Rate", 0.05f, 5.0f, 0.28f));
+    p.add (std::make_unique<F> (juce::ParameterID { "phaserDepth", 1 }, "Phaser Depth", 0.0f, 1.0f, 0.62f));
+    p.add (std::make_unique<F> (juce::ParameterID { "phaserCentre", 1 }, "Phaser Centre", skewed (80.0f, 5000.0f, 900.0f), 850.0f));
+    p.add (std::make_unique<F> (juce::ParameterID { "phaserFeedback", 1 }, "Phaser Feedback", -0.8f, 0.8f, 0.18f));
+    p.add (std::make_unique<F> (juce::ParameterID { "phaserMix", 1 }, "Phaser Mix", 0.0f, 1.0f, 0.35f));
+
+    p.add (std::make_unique<B> (juce::ParameterID { "reverbOn", 1 }, "SPACE Reverb On", true));
+    p.add (std::make_unique<F> (juce::ParameterID { "reverbSize", 1 }, "Size", 0.0f, 1.0f, 0.58f));
+    p.add (std::make_unique<F> (juce::ParameterID { "reverbDamping", 1 }, "Damping", 0.0f, 1.0f, 0.38f));
+    p.add (std::make_unique<F> (juce::ParameterID { "reverbWidth", 1 }, "Width", 0.0f, 1.0f, 0.92f));
+    p.add (std::make_unique<F> (juce::ParameterID { "reverbMix", 1 }, "Reverb Mix", 0.0f, 1.0f, 0.25f));
+    p.add (std::make_unique<B> (juce::ParameterID { "reverbFreeze", 1 }, "Freeze", false));
+
+    p.add (std::make_unique<B> (juce::ParameterID { "compOn", 1 }, "PULSE Compressor On", true));
+    p.add (std::make_unique<F> (juce::ParameterID { "compThreshold", 1 }, "Threshold", -48.0f, 0.0f, -18.0f));
+    p.add (std::make_unique<F> (juce::ParameterID { "compRatio", 1 }, "Ratio", 1.0f, 20.0f, 4.0f));
+    p.add (std::make_unique<F> (juce::ParameterID { "compAttack", 1 }, "Attack", 0.2f, 100.0f, 10.0f));
+    p.add (std::make_unique<F> (juce::ParameterID { "compRelease", 1 }, "Release", 10.0f, 600.0f, 120.0f));
+    p.add (std::make_unique<F> (juce::ParameterID { "compMakeup", 1 }, "Makeup", 0.0f, 18.0f, 2.0f));
+    p.add (std::make_unique<F> (juce::ParameterID { "compMix", 1 }, "Comp Mix", 0.0f, 1.0f, 1.0f));
+
     return p;
 }
 
@@ -346,6 +459,9 @@ juce::String NeonRackProcessor::moduleName (Module m)
         case Module::chorus: return "CHORUS MATRIX";
         case Module::prismDelay: return "PRISM DELAY";
         case Module::orbitEQ: return "ORBIT EQ";
+        case Module::photonPhaser: return "PHOTON PHASER";
+        case Module::spaceReverb: return "SPACE REVERB";
+        case Module::pulseComp: return "PULSE COMPRESSOR";
         default: return "+ ADD FX";
     }
 }
@@ -360,6 +476,9 @@ juce::Colour NeonRackProcessor::moduleColour (Module m)
         case Module::chorus: return juce::Colour (0xff9f7cff);
         case Module::prismDelay: return juce::Colour (0xff4c8dff);
         case Module::orbitEQ: return juce::Colour (0xff5ef0b1);
+        case Module::photonPhaser: return juce::Colour (0xffd076ff);
+        case Module::spaceReverb: return juce::Colour (0xff6d8cff);
+        case Module::pulseComp: return juce::Colour (0xffff6e6e);
         default: return juce::Colour (0xff52738a);
     }
 }
@@ -374,6 +493,9 @@ juce::String NeonRackProcessor::enabledParameter (Module m)
         case Module::chorus: return "chorusOn";
         case Module::prismDelay: return "delayOn";
         case Module::orbitEQ: return "eqOn";
+        case Module::photonPhaser: return "phaserOn";
+        case Module::spaceReverb: return "reverbOn";
+        case Module::pulseComp: return "compOn";
         default: return {};
     }
 }
@@ -388,6 +510,9 @@ juce::StringArray NeonRackProcessor::moduleParameterIds (Module m)
         case Module::chorus: return { "chorusRate", "chorusDepth", "chorusDelay", "chorusMix" };
         case Module::prismDelay: return { "delayTime", "delayFeedback", "delaySpread", "delayMix" };
         case Module::orbitEQ: return { "eqLow", "eqLowFreq", "eqFocus", "eqFocusFreq", "eqFocusQ", "eqAir" };
+        case Module::photonPhaser: return { "phaserRate", "phaserDepth", "phaserCentre", "phaserFeedback", "phaserMix" };
+        case Module::spaceReverb: return { "reverbSize", "reverbDamping", "reverbWidth", "reverbMix", "reverbFreeze" };
+        case Module::pulseComp: return { "compThreshold", "compRatio", "compAttack", "compRelease", "compMakeup", "compMix" };
         default: return {};
     }
 }
@@ -398,22 +523,133 @@ juce::String NeonRackProcessor::parameterLabel (const juce::String& id)
     if (id == "filterRes") return "RESONANCE";
     if (id == "filterDrive" || id == "riftDrive") return "DRIVE";
     if (id == "riftFold") return "FOLD";
-    if (id == "riftMix" || id == "chorusMix" || id == "delayMix") return "MIX";
+    if (id.endsWithIgnoreCase ("Mix")) return "MIX";
     if (id == "auraHeat") return "HEAT";
     if (id == "auraWarmth") return "WARMTH";
     if (id == "auraAir" || id == "eqAir") return "AIR";
-    if (id == "chorusRate") return "RATE";
-    if (id == "chorusDepth") return "DEPTH";
-    if (id == "chorusDelay") return "WIDTH";
+    if (id == "chorusRate" || id == "phaserRate") return "RATE";
+    if (id == "chorusDepth" || id == "phaserDepth") return "DEPTH";
+    if (id == "chorusDelay" || id == "reverbWidth") return "WIDTH";
     if (id == "delayTime") return "TIME";
-    if (id == "delayFeedback") return "FEEDBACK";
+    if (id == "delayFeedback" || id == "phaserFeedback") return "FEEDBACK";
     if (id == "delaySpread") return "SPREAD";
     if (id == "eqLow") return "LOW";
     if (id == "eqLowFreq") return "LOW FREQ";
     if (id == "eqFocus") return "FOCUS";
     if (id == "eqFocusFreq") return "FOCUS FREQ";
     if (id == "eqFocusQ") return "FOCUS Q";
+    if (id == "phaserCentre") return "CENTRE";
+    if (id == "reverbSize") return "SIZE";
+    if (id == "reverbDamping") return "DAMPING";
+    if (id == "reverbFreeze") return "FREEZE";
+    if (id == "compThreshold") return "THRESHOLD";
+    if (id == "compRatio") return "RATIO";
+    if (id == "compAttack") return "ATTACK";
+    if (id == "compRelease") return "RELEASE";
+    if (id == "compMakeup") return "MAKEUP";
     return id.toUpperCase();
+}
+
+void NeonRackProcessor::setPlainParameter (const juce::String& id, float plainValue)
+{
+    if (auto* p = state.getParameter (id))
+        p->setValueNotifyingHost (p->convertTo0to1 (plainValue));
+}
+
+void NeonRackProcessor::enableAllModules()
+{
+    for (int m = (int) Module::filter; m <= (int) Module::pulseComp; ++m)
+        if (auto* p = state.getParameter (enabledParameter ((Module) m)))
+            p->setValueNotifyingHost (1.0f);
+}
+
+juce::StringArray NeonRackProcessor::factoryPresetNames()
+{
+    return { "INIT / CLEAN", "DNB IMPACT", "VOCAL NEON", "BASS MELTDOWN", "DREAM SPACE", "MASTER GLOW" };
+}
+
+void NeonRackProcessor::applyFactoryPreset (int index)
+{
+    auto setRack = [this] (std::initializer_list<Module> modules)
+    {
+        int i = 0;
+        for (auto m : modules)
+        {
+            if (i >= numRackSlots) break;
+            rack[(size_t) i++].store ((int) m);
+        }
+        while (i < numRackSlots) rack[(size_t) i++].store ((int) Module::empty);
+    };
+
+    enableAllModules();
+    setPlainParameter ("globalMix", 1.0f);
+    setPlainParameter ("output", 0.0f);
+    setPlainParameter ("macroDrive", 0.0f);
+    setPlainParameter ("macroSpace", 0.0f);
+    setPlainParameter ("macroMotion", 0.0f);
+    setPlainParameter ("macroTone", 0.0f);
+
+    switch (juce::jlimit (0, 5, index))
+    {
+        case 0:
+            setRack ({ Module::filter, Module::aura, Module::chorus, Module::prismDelay, Module::orbitEQ });
+            setPlainParameter ("filterCutoff", 16000.0f);
+            setPlainParameter ("auraHeat", 3.0f);
+            setPlainParameter ("chorusMix", 0.16f);
+            setPlainParameter ("delayMix", 0.12f);
+            break;
+        case 1:
+            setRack ({ Module::filter, Module::pulseComp, Module::rift, Module::aura, Module::orbitEQ });
+            setPlainParameter ("compThreshold", -20.0f);
+            setPlainParameter ("compRatio", 5.0f);
+            setPlainParameter ("compAttack", 7.0f);
+            setPlainParameter ("compRelease", 90.0f);
+            setPlainParameter ("riftDrive", 13.0f);
+            setPlainParameter ("riftMix", 0.42f);
+            setPlainParameter ("macroDrive", 0.22f);
+            break;
+        case 2:
+            setRack ({ Module::filter, Module::aura, Module::photonPhaser, Module::spaceReverb, Module::prismDelay, Module::orbitEQ });
+            setPlainParameter ("filterCutoff", 14500.0f);
+            setPlainParameter ("reverbMix", 0.22f);
+            setPlainParameter ("delayTime", 310.0f);
+            setPlainParameter ("delayMix", 0.18f);
+            setPlainParameter ("eqAir", 3.0f);
+            setPlainParameter ("macroSpace", 0.18f);
+            break;
+        case 3:
+            setRack ({ Module::rift, Module::filter, Module::aura, Module::pulseComp, Module::orbitEQ, Module::prismDelay });
+            setPlainParameter ("riftDrive", 24.0f);
+            setPlainParameter ("riftFold", 0.55f);
+            setPlainParameter ("filterCutoff", 5200.0f);
+            setPlainParameter ("compThreshold", -16.0f);
+            setPlainParameter ("compRatio", 7.0f);
+            setPlainParameter ("macroDrive", 0.34f);
+            break;
+        case 4:
+            setRack ({ Module::chorus, Module::photonPhaser, Module::prismDelay, Module::spaceReverb, Module::orbitEQ, Module::aura });
+            setPlainParameter ("chorusMix", 0.38f);
+            setPlainParameter ("delayFeedback", 0.58f);
+            setPlainParameter ("delayMix", 0.32f);
+            setPlainParameter ("reverbSize", 0.82f);
+            setPlainParameter ("reverbMix", 0.34f);
+            setPlainParameter ("macroSpace", 0.30f);
+            setPlainParameter ("macroMotion", 0.25f);
+            break;
+        case 5:
+            setRack ({ Module::pulseComp, Module::aura, Module::orbitEQ });
+            setPlainParameter ("compThreshold", -12.0f);
+            setPlainParameter ("compRatio", 2.2f);
+            setPlainParameter ("compAttack", 25.0f);
+            setPlainParameter ("compRelease", 180.0f);
+            setPlainParameter ("compMix", 0.72f);
+            setPlainParameter ("auraHeat", 2.4f);
+            setPlainParameter ("eqAir", 1.8f);
+            setPlainParameter ("macroTone", 0.10f);
+            break;
+    }
+
+    storeRackToState();
 }
 
 void NeonRackProcessor::getStateInformation (juce::MemoryBlock& dest)
