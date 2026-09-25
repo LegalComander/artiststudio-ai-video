@@ -1,9 +1,15 @@
 cmake_minimum_required(VERSION 3.22)
-project(ArtistStudioNeonRack VERSION 0.2.0 LANGUAGES C CXX)
+project(ArtistStudioNeonRack VERSION 0.2.1 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+# Ship a self-contained Windows binary so users are not dependent on a
+# particular Visual C++ Redistributable already being installed by the DAW.
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 include(FetchContent)
 FetchContent_Declare(

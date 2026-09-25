@@ -1,4 +1,4 @@
-name: Build ArtistStudio NEONRACK FX
+name: Build and Validate ArtistStudio NEONRACK FX
 
 on:
   workflow_dispatch:
@@ -15,14 +15,15 @@ on:
 
 jobs:
   windows-vst3:
-    runs-on: windows-latest
+    # Build against the mature VS2022 toolchain for broader DAW compatibility.
+    runs-on: windows-2022
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S fx-rack -B fx-rack/build -G "Visual Studio 18 2026" -A x64
+        run: cmake -S fx-rack -B fx-rack/build -G "Visual Studio 17 2022" -A x64
 
       - name: Build Release
         run: cmake --build fx-rack/build --config Release --parallel 2
@@ -35,6 +36,23 @@ jobs:
           if (-not $vst) { throw "ArtistStudio NEONRACK FX.vst3 was not found after the build." }
           Copy-Item $vst.FullName "fx-rack/dist/ArtistStudio NEONRACK FX.vst3" -Recurse
           Copy-Item "fx-rack/README.md" "fx-rack/dist/README.md"
+
+      - name: Install pluginval
+        shell: pwsh
+        run: choco install pluginval -y --no-progress
+
+      - name: Validate VST3 host safety
+        shell: pwsh
+        run: |
+          $pluginval = "C:\ProgramData\chocolatey\lib\pluginval\tools\pluginval.exe"
+          if (-not (Test-Path $pluginval)) { throw "pluginval.exe was not found at $pluginval" }
+          $pluginPath = "${{ github.workspace }}\fx-rack\dist\ArtistStudio NEONRACK FX.vst3"
+          $validationLog = "${{ github.workspace }}\fx-rack\pluginval-console.txt"
+          & $pluginval --validate $pluginPath --strictness-level 5 --timeout-ms 60000 --verbose 2>&1 | Tee-Object -FilePath $validationLog
+          $validationText = Get-Content $validationLog -Raw
+          if ($validationText -notmatch "(?m)^SUCCESS\s*$") {
+            throw "pluginval did not report SUCCESS for NEONRACK FX"
+          }
 
       - name: Upload Windows VST3
         uses: actions/upload-artifact@v4
