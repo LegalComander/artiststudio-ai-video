@@ -86,6 +86,7 @@ target_sources(ArtistStudioStemLabVST3 PRIVATE
 target_compile_definitions(ArtistStudioStemLabVST3 PRIVATE
     JUCE_WEB_BROWSER=0
     JUCE_USE_CURL=0
+    JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
 target_link_libraries(ArtistStudioStemLabVST3 PRIVATE
