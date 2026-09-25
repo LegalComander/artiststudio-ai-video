@@ -1,0 +1,43 @@
+name: Build ArtistStudio Stem Lab Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-windows.yml"
+  pull_request:
+    paths:
+      - "desktop/**"
+      - ".github/workflows/desktop-windows.yml"
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S desktop -B desktop/build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build Release
+        run: cmake --build desktop/build --config Release --parallel 2
+
+      - name: Collect executable
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path desktop/dist | Out-Null
+          $exe = Get-ChildItem -Path desktop/build -Recurse -Filter "ArtistStudio Stem Lab.exe" | Select-Object -First 1
+          if (-not $exe) { throw "ArtistStudio Stem Lab.exe was not found after the build." }
+          Copy-Item $exe.FullName "desktop/dist/ArtistStudio Stem Lab.exe"
+          Copy-Item "desktop/scripts/install-demucs.ps1" "desktop/dist/install-demucs.ps1"
+          Copy-Item "desktop/README.md" "desktop/dist/README.md"
+
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: ArtistStudio-Stem-Lab-Windows
+          path: desktop/dist/
+          if-no-files-found: error
