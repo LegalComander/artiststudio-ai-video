@@ -60,8 +60,8 @@ void NeonLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& but
 void NeonLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button, bool, bool)
 {
     g.setColour (button.isEnabled() ? juce::Colours::white : juce::Colour (0xff7890a0));
-    g.setFont (juce::Font (juce::FontOptions (15.0f, juce::Font::bold)));
-    g.drawFittedText (button.getButtonText(), button.getLocalBounds().reduced (8, 2), juce::Justification::centred, 1);
+    g.setFont (juce::Font (juce::FontOptions (14.5f, juce::Font::bold)));
+    g.drawFittedText (button.getButtonText(), button.getLocalBounds().reduced (7, 2), juce::Justification::centred, 1);
 }
 
 MainComponent::MainComponent()
@@ -108,7 +108,7 @@ MainComponent::MainComponent()
         addAndMakeVisible (*label);
     }
 
-    for (auto* button : { &chooseButton, &analyzeButton, &separateButton, &outputButton })
+    for (auto* button : { &chooseButton, &analyzeButton, &engineButton, &separateButton, &outputButton })
     {
         button->addListener (this);
         addAndMakeVisible (*button);
@@ -120,6 +120,7 @@ MainComponent::MainComponent()
     analyzeButton.setEnabled (false);
     separateButton.setEnabled (false);
     outputButton.setEnabled (false);
+    refreshEngineButton();
 }
 
 MainComponent::~MainComponent()
@@ -199,14 +200,15 @@ void MainComponent::resized()
     chooseButton.setBounds (drop.withSizeKeepingCentre (180, 40));
 
     auto buttons = bounds.removeFromTop (72).reduced (0, 14);
-    const int buttonW = 185;
-    analyzeButton.setBounds (buttons.removeFromLeft (buttonW));
-    buttons.removeFromLeft (10);
-    separateButton.setBounds (buttons.removeFromLeft (buttonW));
-    buttons.removeFromLeft (14);
-    maximumQuality.setBounds (buttons.removeFromLeft (225));
-    buttons.removeFromLeft (10);
-    outputButton.setBounds (buttons.removeFromLeft (185));
+    analyzeButton.setBounds (buttons.removeFromLeft (165));
+    buttons.removeFromLeft (8);
+    engineButton.setBounds (buttons.removeFromLeft (165));
+    buttons.removeFromLeft (8);
+    separateButton.setBounds (buttons.removeFromLeft (165));
+    buttons.removeFromLeft (12);
+    maximumQuality.setBounds (buttons.removeFromLeft (205));
+    buttons.removeFromLeft (8);
+    outputButton.setBounds (buttons.removeFromLeft (175));
 
     auto metrics = bounds.removeFromTop (112);
     const int gap = 12;
@@ -253,6 +255,8 @@ void MainComponent::buttonClicked (juce::Button* button)
         chooseFile();
     else if (button == &analyzeButton)
         analyzeCurrentTrack();
+    else if (button == &engineButton)
+        installLocalEngine();
     else if (button == &separateButton)
         separateCurrentTrack();
     else if (button == &outputButton && lastStemFolder.isDirectory())
@@ -327,6 +331,47 @@ void MainComponent::analyzeCurrentTrack()
     }).detach();
 }
 
+void MainComponent::refreshEngineButton()
+{
+    const auto ready = stemEngine.isEngineReady();
+    engineButton.setButtonText (ready ? "AI Engine Ready" : "Install Local AI");
+    engineButton.setEnabled (! ready && ! stemEngine.isBusy());
+}
+
+void MainComponent::installLocalEngine()
+{
+    if (stemEngine.isBusy())
+        return;
+
+    if (stemEngine.isEngineReady())
+    {
+        refreshEngineButton();
+        setStatus ("Local AI engine is already installed and ready.", juce::Colour (0xff8ff5c9));
+        return;
+    }
+
+    engineButton.setButtonText ("Installing AI…");
+    engineButton.setEnabled (false);
+    separateButton.setEnabled (false);
+    analyzeButton.setEnabled (false);
+    setStatus ("Setting up ArtistStudio's private local AI engine. The first setup downloads AI dependencies…", cyan);
+
+    stemEngine.startEngineSetup ([safeThis = juce::Component::SafePointer<MainComponent> (this)] (EngineSetupResult result)
+    {
+        if (safeThis == nullptr)
+            return;
+
+        safeThis->refreshEngineButton();
+        safeThis->analyzeButton.setEnabled (safeThis->currentFile.existsAsFile());
+        safeThis->separateButton.setEnabled (safeThis->currentFile.existsAsFile());
+
+        if (result.ok)
+            safeThis->setStatus ("Local AI engine installed and verified. Stem separation is ready.", juce::Colour (0xff8ff5c9));
+        else
+            safeThis->setStatus ("AI engine setup failed: " + result.error, juce::Colour (0xffff8ba5));
+    });
+}
+
 void MainComponent::separateCurrentTrack()
 {
     if (! currentFile.existsAsFile() || stemEngine.isBusy())
@@ -335,7 +380,8 @@ void MainComponent::separateCurrentTrack()
     const auto demucs = stemEngine.detectDemucsLauncher();
     if (demucs.isEmpty())
     {
-        setStatus ("Local AI engine not installed yet. Install Python 3, then run: pip install -U demucs", juce::Colour (0xffffbb72));
+        refreshEngineButton();
+        setStatus ("Local AI is not installed yet. Press Install Local AI once, then separation will run here on your PC.", juce::Colour (0xffffbb72));
         return;
     }
 
@@ -345,11 +391,12 @@ void MainComponent::separateCurrentTrack()
 
     separateButton.setEnabled (false);
     analyzeButton.setEnabled (false);
+    engineButton.setEnabled (false);
     vocalsStatus.setText ("🎤  Vocals   • processing", juce::dontSendNotification);
     drumsStatus.setText  ("🥁  Drums    • processing", juce::dontSendNotification);
     bassStatus.setText   ("🔊  Bass     • processing", juce::dontSendNotification);
     otherStatus.setText  ("🎹  Other    • processing", juce::dontSendNotification);
-    setStatus ("Demucs is separating four stems locally. This can take a few minutes…", cyan);
+    setStatus ("Demucs is separating four stems locally…", cyan);
 
     stemEngine.startSeparation (currentFile, root, maximumQuality.getToggleState(),
                                 [safeThis = juce::Component::SafePointer<MainComponent> (this)] (StemSeparationResult result)
@@ -363,6 +410,7 @@ void MainComponent::updateStemStatus (const StemSeparationResult& result)
 {
     separateButton.setEnabled (true);
     analyzeButton.setEnabled (currentFile.existsAsFile());
+    refreshEngineButton();
 
     if (! result.ok)
     {
