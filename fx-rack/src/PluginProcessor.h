@@ -8,7 +8,20 @@
 class NeonRackProcessor final : public juce::AudioProcessor
 {
 public:
-    enum class Module : int { empty = 0, filter, rift, aura, chorus, prismDelay, orbitEQ };
+    enum class Module : int
+    {
+        empty = 0,
+        filter,
+        rift,
+        aura,
+        chorus,
+        prismDelay,
+        orbitEQ,
+        photonPhaser,
+        spaceReverb,
+        pulseComp
+    };
+
     static constexpr int numRackSlots = 6;
 
     NeonRackProcessor();
@@ -25,7 +38,7 @@ public:
     bool acceptsMidi() const override { return false; }
     bool producesMidi() const override { return false; }
     bool isMidiEffect() const override { return false; }
-    double getTailLengthSeconds() const override { return 8.0; }
+    double getTailLengthSeconds() const override { return 10.0; }
 
     int getNumPrograms() override { return 1; }
     int getCurrentProgram() override { return 0; }
@@ -44,6 +57,9 @@ public:
     void removeSlot (int slot);
     void moveSlot (int from, int to);
 
+    void applyFactoryPreset (int index);
+    static juce::StringArray factoryPresetNames();
+
     static juce::String moduleName (Module);
     static juce::Colour moduleColour (Module);
     static juce::String enabledParameter (Module);
@@ -56,6 +72,8 @@ private:
     void processModule (Module module, juce::AudioBuffer<float>& buffer);
     void restoreRackFromState();
     void storeRackToState();
+    void setPlainParameter (const juce::String& id, float plainValue);
+    void enableAllModules();
 
     static float dbToGain (float db) { return juce::Decibels::decibelsToGain (db); }
 
@@ -64,6 +82,9 @@ private:
 
     juce::dsp::StateVariableTPTFilter<float> filter;
     juce::dsp::Chorus<float> chorus;
+    juce::dsp::Phaser<float> phaser;
+    juce::dsp::Reverb reverb;
+    juce::dsp::Compressor<float> compressor;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> eqLow;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> eqFocus;
     juce::dsp::ProcessorDuplicator<juce::dsp::IIR::Filter<float>, juce::dsp::IIR::Coefficients<float>> eqAir;
@@ -73,6 +94,7 @@ private:
     int delayWrite = 0;
     float delayPhase = 0.0f;
     juce::AudioBuffer<float> dryBuffer;
+    juce::AudioBuffer<float> moduleDryBuffer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (NeonRackProcessor)
 };
