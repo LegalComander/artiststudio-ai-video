@@ -47,11 +47,15 @@ jobs:
           $pluginval = "C:\ProgramData\chocolatey\lib\pluginval\tools\pluginval.exe"
           if (-not (Test-Path $pluginval)) { throw "pluginval.exe was not found at $pluginval" }
           $pluginPath = "${{ github.workspace }}\fx-rack\dist\ArtistStudio NEONRACK FX.vst3"
-          $validation = & $pluginval --strictness-level 5 --timeout-ms 60000 --verbose $pluginPath 2>&1
-          $validation | ForEach-Object { Write-Host $_ }
-          if (($validation -join "`n") -notmatch "(?m)^SUCCESS\s*$") {
-            throw "pluginval did not report SUCCESS for NEONRACK FX"
+          $logDir = "${{ github.workspace }}\fx-rack\pluginval-logs"
+          New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+          & $pluginval --validate $pluginPath --strictness-level 5 --timeout-ms 60000 --verbose --output-dir $logDir
+          $exitCode = $LASTEXITCODE
+          Get-ChildItem -Path $logDir -Recurse -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "===== pluginval log: $($_.FullName) ====="
+            Get-Content $_.FullName -ErrorAction SilentlyContinue
           }
+          if ($exitCode -ne 0) { throw "pluginval rejected NEONRACK FX with exit code $exitCode" }
 
       - name: Upload Windows VST3
         uses: actions/upload-artifact@v4
