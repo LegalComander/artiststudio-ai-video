@@ -1,4 +1,4 @@
-name: Build ArtistStudio Stem Lab Desktop
+name: Build ArtistStudio Stem Lab Windows
 
 on:
   workflow_dispatch:
@@ -27,13 +27,19 @@ jobs:
       - name: Build Release
         run: cmake --build desktop/build --config Release --parallel 2
 
-      - name: Collect executable
+      - name: Collect Windows app and VST3
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path desktop/dist | Out-Null
+
           $exe = Get-ChildItem -Path desktop/build -Recurse -Filter "ArtistStudio Stem Lab.exe" | Select-Object -First 1
           if (-not $exe) { throw "ArtistStudio Stem Lab.exe was not found after the build." }
           Copy-Item $exe.FullName "desktop/dist/ArtistStudio Stem Lab.exe"
+
+          $vst = Get-ChildItem -Path desktop/build -Recurse | Where-Object { $_.Name -eq "ArtistStudio Stem Lab.vst3" } | Select-Object -First 1
+          if (-not $vst) { throw "ArtistStudio Stem Lab.vst3 was not found after the build." }
+          Copy-Item $vst.FullName "desktop/dist/ArtistStudio Stem Lab.vst3" -Recurse
+
           Copy-Item "desktop/scripts/install-demucs.ps1" "desktop/dist/install-demucs.ps1"
           Copy-Item "desktop/README.md" "desktop/dist/README.md"
 

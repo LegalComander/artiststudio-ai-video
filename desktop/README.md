@@ -1,10 +1,12 @@
-# ArtistStudio Stem Lab Desktop
+# ArtistStudio Stem Lab Windows
 
-Standalone Windows-first version of ArtistStudio Stem Lab.
+ArtistStudio Stem Lab now builds both a standalone Windows app and an early VST3 beta from the same JUCE codebase.
 
-## v0.2 scope
+## Current scope
 
-- Blue/cyan neon JUCE desktop interface
+- Blue/cyan neon JUCE interface
+- Standalone Windows app
+- VST3 beta using the same Stem Lab interface
 - Drag/drop or choose WAV, MP3, FLAC, AIFF
 - Local BPM estimation
 - Local musical-key estimation
@@ -21,28 +23,48 @@ Standalone Windows-first version of ArtistStudio Stem Lab.
 ## Architecture
 
 ```text
-Desktop UI (JUCE)
+Shared Stem Lab UI + engine
   -> TrackAnalyzer (C++ / JUCE DSP)
   -> StemEngine
        -> ArtistStudio-managed local Python environment
        -> Demucs 4.1.0
-       -> ONNX/native engine later
+       -> native inference backend later
+  -> Standalone EXE
+  -> VST3 plugin
   -> WAV stems in Documents/ArtistStudio Stem Lab/Stems
 ```
 
-The stem engine is isolated from the UI so it can later be reused by the VST3 target and eventually swapped for a native ONNX Runtime backend without redesigning the product.
+The VST3 beta currently passes the DAW audio through unchanged and embeds the file-based Stem Lab workflow inside the plugin window. This is intentional for the first plugin milestone: heavy separation never runs on the real-time audio thread.
+
+Future VST work will add host-track capture, drag-export and multi-output stem routing.
 
 ## First-run user flow
 
-1. Open **ArtistStudio Stem Lab**.
+1. Open the standalone app or insert the VST3 in your DAW.
 2. Press **Install Local AI** once.
 3. Stem Lab creates a private AI environment and installs Demucs locally.
 4. The button changes to **AI Engine Ready** after verification.
-5. Drop in a track and press **Separate 4 Stems**.
+5. Drop in or choose a track and press **Separate 4 Stems**.
 
-No Replicate token or cloud account is required for desktop separation. Internet access is required for the one-time local AI dependency download.
+No Replicate token or cloud account is required. Internet access is required for the one-time local AI dependency download.
 
 If Python is already installed, Stem Lab uses it only to create its own private environment. It does not install Demucs into the user's normal Python environment.
+
+## Install the VST3 beta on Windows
+
+Copy:
+
+```text
+ArtistStudio Stem Lab.vst3
+```
+
+to the standard system VST3 folder:
+
+```text
+C:\Program Files\Common Files\VST3\
+```
+
+Then rescan plugins in Ableton Live, FL Studio, REAPER, Cubase or another VST3 host.
 
 ## Windows build
 
@@ -59,9 +81,9 @@ cmake -S desktop -B desktop/build -G "Visual Studio 18 2026" -A x64
 cmake --build desktop/build --config Release
 ```
 
-The executable is created under the CMake artefacts directory in `desktop/build`.
+The build creates both the standalone application and the VST3 target.
 
-## Output
+## Stem output
 
 Completed stems are written to:
 
@@ -81,9 +103,10 @@ with:
 1. Add original/stem audio preview with solo and mute.
 2. Add live separation progress and a Cancel button.
 3. Add GPU/runtime diagnostics and memory-aware settings for laptop GPUs.
-4. Add drag-export into DAWs.
-5. Create the VST3 target using the same analyzer and stem engine.
-6. Replace the Python runner with a native/bundled inference backend when the model/runtime packaging is production-ready.
+4. Add drag-export of stems directly into the DAW.
+5. Add VST host-track capture for tracks already playing through the plugin.
+6. Add multi-output VST routing: vocals, drums, bass and other to separate DAW channels.
+7. Replace the Python runner with a native inference backend when production packaging is ready.
 
 ## Notes
 
