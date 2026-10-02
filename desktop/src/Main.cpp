@@ -5,7 +5,7 @@ class ArtistStudioStemLabApplication final : public juce::JUCEApplication
 {
 public:
     const juce::String getApplicationName() override       { return "ArtistStudio Stem Lab"; }
-    const juce::String getApplicationVersion() override    { return "0.1.0"; }
+    const juce::String getApplicationVersion() override    { return "0.3.0"; }
     bool moreThanOneInstanceAllowed() override             { return true; }
 
     void initialise (const juce::String&) override
@@ -34,7 +34,7 @@ private:
         {
             setUsingNativeTitleBar (true);
             setResizable (true, true);
-            setResizeLimits (820, 650, 1600, 1200);
+            setResizeLimits (980, 760, 1600, 1200);
             setContentOwned (new MainComponent(), true);
             centreWithSize (getWidth(), getHeight());
             setVisible (true);
