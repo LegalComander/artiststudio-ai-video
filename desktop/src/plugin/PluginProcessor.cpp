@@ -8,12 +8,14 @@ StemLabAudioProcessor::StemLabAudioProcessor()
 {
 }
 
-void StemLabAudioProcessor::prepareToPlay (double, int)
+void StemLabAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    previewEngine.prepareToPlay (samplesPerBlock, sampleRate);
 }
 
 void StemLabAudioProcessor::releaseResources()
 {
+    previewEngine.releaseResources();
 }
 
 bool StemLabAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) const
@@ -32,6 +34,12 @@ void StemLabAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce
 {
     juce::ScopedNoDenormals noDenormals;
 
+    if (previewEngine.isPlaying())
+    {
+        juce::AudioSourceChannelInfo previewInfo (&buffer, 0, buffer.getNumSamples());
+        previewEngine.getNextAudioBlock (previewInfo);
+    }
+
     for (auto channel = getTotalNumInputChannels(); channel < getTotalNumOutputChannels(); ++channel)
         buffer.clear (channel, 0, buffer.getNumSamples());
 }
@@ -49,7 +57,7 @@ const juce::String StemLabAudioProcessor::getName() const
 void StemLabAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
     juce::MemoryOutputStream stream (destData, false);
-    stream.writeString ("ArtistStudio Stem Lab VST3 v0.1");
+    stream.writeString ("ArtistStudio Stem Lab VST3 v0.3");
 }
 
 void StemLabAudioProcessor::setStateInformation (const void*, int)
