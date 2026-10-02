@@ -338,13 +338,13 @@ void StemEngine::runSeparation()
     else
     {
         output.createDirectory();
-        const auto model = maxQuality ? "htdemucs_ft" : "htdemucs";
+        const juce::String model = maxQuality ? "htdemucs_ft" : "htdemucs";
         const auto command = launcher
                            + " -m demucs -n " + model
                            + " --out " + quote (output.getFullPathName())
                            + " " + quote (source.getFullPathName());
 
-        publishProgress (0.02, "Starting " + model + " separation...");
+        publishProgress (0.02, juce::String ("Starting ") + model + " separation...");
 
         juce::ChildProcess process;
         if (! process.start (command))
@@ -367,7 +367,8 @@ void StemEngine::runSeparation()
                     {
                         lastProgress = juce::jmin (0.97, parsed);
                         publishProgress (lastProgress,
-                                         "Separating stems... " + juce::String ((int) std::round (lastProgress * 100.0)) + "%");
+                                         juce::String ("Separating stems... ")
+                                             + juce::String ((int) std::round (lastProgress * 100.0)) + "%");
                     }
                 }
                 wait (150);
