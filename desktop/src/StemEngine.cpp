@@ -7,13 +7,19 @@ juce::String quote (const juce::String& text)
     return "\"" + text.replace ("\"", "\\\"") + "\"";
 }
 
-bool commandWorks (const juce::String& command)
+bool commandWorks (const juce::String& command, int timeoutMs = 10000)
 {
     juce::ChildProcess process;
     if (! process.start (command))
         return false;
 
-    process.waitForProcessToFinish (10000);
+    const bool finished = process.waitForProcessToFinish (timeoutMs);
+    if (! finished)
+    {
+        process.kill();
+        return false;
+    }
+
     return process.getExitCode() == 0;
 }
 }
@@ -53,9 +59,10 @@ juce::String StemEngine::detectSystemPython()
     const auto localAppData = juce::SystemStats::getEnvironmentVariable ("LOCALAPPDATA", {});
     juce::StringArray candidates;
 
+    // Prefer Python 3.12 for the current Demucs/PyTorch Windows stack.
     if (localAppData.isNotEmpty())
     {
-        for (const auto& folder : { "Python313", "Python312", "Python311", "Python310" })
+        for (const auto& folder : { "Python312", "Python311", "Python310", "Python313" })
         {
             const auto python = juce::File (localAppData)
                                     .getChildFile ("Programs")
@@ -67,13 +74,13 @@ juce::String StemEngine::detectSystemPython()
         }
     }
 
-    candidates.addArray ({ "py -3.13", "py -3.12", "py -3.11", "py -3.10", "py -3", "python" });
+    candidates.addArray ({ "py -3.12", "py -3.11", "py -3.10", "py -3.13", "py -3", "python" });
    #else
     juce::StringArray candidates { "python3", "python" };
    #endif
 
     for (const auto& candidate : candidates)
-        if (commandWorks (candidate + " --version"))
+        if (commandWorks (candidate + " --version", 15000))
             return candidate;
 
     return {};
@@ -82,17 +89,17 @@ juce::String StemEngine::detectSystemPython()
 juce::String StemEngine::detectDemucsLauncher()
 {
     const auto managed = managedPythonLauncher();
-    if (managed.isNotEmpty() && commandWorks (managed + " -m demucs --help"))
+    if (managed.isNotEmpty() && commandWorks (managed + " -m demucs --help", 120000))
         return managed;
 
    #if JUCE_WINDOWS
-    const juce::StringArray candidates { "py -3.13", "py -3.12", "py -3.11", "py -3.10", "py -3", "python" };
+    const juce::StringArray candidates { "py -3.12", "py -3.11", "py -3.10", "py -3.13", "py -3", "python" };
    #else
     const juce::StringArray candidates { "python3", "python" };
    #endif
 
     for (const auto& candidate : candidates)
-        if (commandWorks (candidate + " -m demucs --help"))
+        if (commandWorks (candidate + " -m demucs --help", 120000))
             return candidate;
 
     return {};
@@ -199,7 +206,7 @@ void StemEngine::runSetup()
     {
         result.ok = true;
         result.launcher = existing;
-        result.log = "Demucs is already available.";
+        result.log = "Demucs is already available and verified.";
     }
     else
     {
@@ -209,7 +216,7 @@ void StemEngine::runSetup()
         auto python = detectSystemPython();
 
        #if JUCE_WINDOWS
-        if (python.isEmpty() && commandWorks ("winget --version"))
+        if (python.isEmpty() && commandWorks ("winget --version", 15000))
         {
             log << "Installing Python 3.12 with Windows Package Manager...\n";
             runCommand ("winget install --id Python.Python.3.12 -e --silent --accept-package-agreements --accept-source-agreements", log, 600000);
@@ -219,14 +226,22 @@ void StemEngine::runSetup()
 
         if (python.isEmpty())
         {
-            result.error = "Python 3.10+ was not found and could not be installed automatically. Install Python once, then press Install Local AI again.";
+            result.error = "Python 3.10+ was not found and could not be installed automatically. Install Python 3.12, then press Install Local AI again.";
         }
         else
         {
+            // An interrupted or incompatible first install can leave a venv that
+            // exists but cannot start Demucs. Rebuild it cleanly before retrying.
             const auto venv = root.getChildFile ("venv");
-            const auto createVenv = python + " -m venv " + quote (venv.getFullPathName());
+            if (venv.exists())
+            {
+                log << "Removing incomplete ArtistStudio AI environment...\n";
+                venv.deleteRecursively();
+            }
 
+            const auto createVenv = python + " -m venv " + quote (venv.getFullPathName());
             log << "Creating private ArtistStudio AI environment...\n";
+
             if (! runCommand (createVenv, log, 180000))
             {
                 result.error = "Could not create the ArtistStudio AI environment.";
@@ -241,7 +256,7 @@ void StemEngine::runSetup()
                 else
                 {
                     log << "Updating installer tools...\n";
-                    const auto pipOk = runCommand (managed + " -m pip install --upgrade pip", log, 300000);
+                    const auto pipOk = runCommand (managed + " -m pip install --upgrade pip setuptools wheel", log, 300000);
 
                     if (! pipOk)
                     {
@@ -256,15 +271,25 @@ void StemEngine::runSetup()
                         {
                             result.error = "Demucs installation failed. Check your internet connection and try Install Local AI again.";
                         }
-                        else if (! commandWorks (managed + " -m demucs --help"))
-                        {
-                            result.error = "The AI engine installed but failed its verification check.";
-                        }
                         else
                         {
-                            result.ok = true;
-                            result.launcher = managed;
-                            result.log = log;
+                            log << "Verifying Demucs. First launch can take up to two minutes on Windows...\n";
+                            juce::String verifyLog;
+                            const auto verified = runCommand (managed + " -m demucs --help", verifyLog, 120000);
+                            log << verifyLog;
+
+                            if (! verified)
+                            {
+                                const auto detail = verifyLog.substring (juce::jmax (0, verifyLog.length() - 900)).trim();
+                                result.error = "The AI engine installed but could not start Demucs."
+                                             + (detail.isNotEmpty() ? " Details: " + detail : juce::String());
+                            }
+                            else
+                            {
+                                result.ok = true;
+                                result.launcher = managed;
+                                result.log = log;
+                            }
                         }
                     }
                 }
@@ -383,8 +408,7 @@ void StemEngine::runSeparation()
             else
             {
                 process.waitForProcessToFinish (-1);
-                const auto finalChunk = process.readAllProcessOutput();
-                log << finalChunk;
+                log << process.readAllProcessOutput();
                 result.log = log;
 
                 if (process.getExitCode() != 0)
