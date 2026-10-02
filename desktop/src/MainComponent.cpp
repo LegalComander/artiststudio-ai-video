@@ -146,7 +146,6 @@ MainComponent::MainComponent (PreviewEngine* sharedPreviewEngine)
 
     separationProgressBar.setColour (juce::ProgressBar::backgroundColourId, panel2);
     separationProgressBar.setColour (juce::ProgressBar::foregroundColourId, cyan);
-    separationProgressBar.setColour (juce::ProgressBar::textColourId, text);
     separationProgressBar.setPercentageDisplay (true);
     addAndMakeVisible (separationProgressBar);
 
@@ -431,8 +430,8 @@ void MainComponent::buttonClicked (juce::Button* button)
 void MainComponent::chooseFile()
 {
     fileChooser = std::make_unique<juce::FileChooser> ("Choose a track", juce::File(), "*.wav;*.mp3;*.flac;*.aif;*.aiff");
-    const auto flags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
-    fileChooser->launchAsync (flags, [safeThis = juce::Component::SafePointer<MainComponent> (this)] (const juce::FileChooser& chooser)
+    const auto chooserFlags = juce::FileBrowserComponent::openMode | juce::FileBrowserComponent::canSelectFiles;
+    fileChooser->launchAsync (chooserFlags, [safeThis = juce::Component::SafePointer<MainComponent> (this)] (const juce::FileChooser& chooser)
     {
         if (safeThis != nullptr)
         {
