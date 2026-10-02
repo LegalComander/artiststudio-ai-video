@@ -69,6 +69,7 @@ private:
     std::array<std::atomic<float>, trackCount> gains;
     std::array<std::atomic<bool>, trackCount> mutes;
     std::array<std::atomic<bool>, trackCount> solos;
+    juce::AudioBuffer<float> scratch;
 
     std::atomic<Mode> mode { Mode::stopped };
     std::atomic<bool> playing { false };
