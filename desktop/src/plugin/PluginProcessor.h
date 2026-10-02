@@ -1,6 +1,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "../PreviewEngine.h"
 
 class StemLabAudioProcessor final : public juce::AudioProcessor
 {
@@ -31,6 +32,10 @@ public:
     void getStateInformation (juce::MemoryBlock& destData) override;
     void setStateInformation (const void* data, int sizeInBytes) override;
 
+    PreviewEngine& getPreviewEngine() noexcept { return previewEngine; }
+
 private:
+    PreviewEngine previewEngine;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StemLabAudioProcessor)
 };
