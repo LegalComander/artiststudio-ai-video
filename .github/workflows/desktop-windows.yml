@@ -1,4 +1,4 @@
-name: Build ArtistStudio Stem Lab Windows
+name: Build and Validate ArtistStudio Stem Lab Windows
 
 on:
   workflow_dispatch:
@@ -15,14 +15,14 @@ on:
 
 jobs:
   windows-release:
-    runs-on: windows-latest
+    runs-on: windows-2022
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Configure
-        run: cmake -S desktop -B desktop/build -G "Visual Studio 18 2026" -A x64
+        run: cmake -S desktop -B desktop/build -G "Visual Studio 17 2022" -A x64
 
       - name: Build Release
         run: cmake --build desktop/build --config Release --parallel 2
@@ -42,6 +42,23 @@ jobs:
 
           Copy-Item "desktop/scripts/install-demucs.ps1" "desktop/dist/install-demucs.ps1"
           Copy-Item "desktop/README.md" "desktop/dist/README.md"
+
+      - name: Install pluginval
+        shell: pwsh
+        run: choco install pluginval -y --no-progress
+
+      - name: Validate Stem Lab VST3 host safety
+        shell: pwsh
+        run: |
+          $pluginval = "C:\ProgramData\chocolatey\lib\pluginval\tools\pluginval.exe"
+          if (-not (Test-Path $pluginval)) { throw "pluginval.exe was not found at $pluginval" }
+          $pluginPath = "${{ github.workspace }}\desktop\dist\ArtistStudio Stem Lab.vst3"
+          $validationLog = "${{ github.workspace }}\desktop\pluginval-console.txt"
+          & $pluginval --validate $pluginPath --strictness-level 5 --timeout-ms 60000 --verbose 2>&1 | Tee-Object -FilePath $validationLog
+          $validationText = Get-Content $validationLog -Raw
+          if ($validationText -notmatch "(?m)^SUCCESS\s*$") {
+            throw "pluginval did not report SUCCESS for ArtistStudio Stem Lab"
+          }
 
       - name: Upload Windows build
         uses: actions/upload-artifact@v4

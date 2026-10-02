@@ -28,6 +28,7 @@ class StemEngine : private juce::Thread
 public:
     using Completion = std::function<void (StemSeparationResult)>;
     using SetupCompletion = std::function<void (EngineSetupResult)>;
+    using ProgressCallback = std::function<void (double, juce::String)>;
 
     StemEngine();
     ~StemEngine() override;
@@ -41,7 +42,9 @@ public:
     void startSeparation (juce::File sourceFile,
                           juce::File outputRoot,
                           bool maximumQuality,
+                          ProgressCallback progress,
                           Completion completion);
+    void requestCancel();
     void cancel();
 
 private:
@@ -55,6 +58,8 @@ private:
     void run() override;
     void runSetup();
     void runSeparation();
+    void publishProgress (double progress, const juce::String& message);
+    static double extractProgress (const juce::String& text);
 
     juce::String detectSystemPython();
     juce::String managedPythonLauncher() const;
@@ -68,6 +73,7 @@ private:
     bool maxQuality = false;
     Completion onComplete;
     SetupCompletion onSetupComplete;
+    ProgressCallback onProgress;
     juce::String launcher;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (StemEngine)

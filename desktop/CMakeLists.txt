@@ -1,10 +1,14 @@
 cmake_minimum_required(VERSION 3.22)
 
-project(ArtistStudioStemLab VERSION 0.2.0 LANGUAGES C CXX)
+project(ArtistStudioStemLab VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
 
 include(FetchContent)
 FetchContent_Declare(
@@ -18,6 +22,8 @@ FetchContent_MakeAvailable(JUCE)
 set(STEMLAB_SHARED_SOURCES
     src/MainComponent.cpp
     src/MainComponent.h
+    src/PreviewEngine.cpp
+    src/PreviewEngine.h
     src/TrackAnalyzer.cpp
     src/TrackAnalyzer.h
     src/StemEngine.cpp
@@ -52,6 +58,10 @@ target_compile_definitions(ArtistStudioStemLab PRIVATE
     JUCE_APPLICATION_NAME_STRING="$<TARGET_PROPERTY:ArtistStudioStemLab,JUCE_PRODUCT_NAME>"
     JUCE_APPLICATION_VERSION_STRING="${PROJECT_VERSION}"
 )
+
+if(MSVC)
+    target_compile_options(ArtistStudioStemLab PRIVATE /utf-8)
+endif()
 
 target_link_libraries(ArtistStudioStemLab PRIVATE
     ${STEMLAB_SHARED_LIBRARIES}
@@ -88,6 +98,10 @@ target_compile_definitions(ArtistStudioStemLabVST3 PRIVATE
     JUCE_USE_CURL=0
     JUCE_VST3_CAN_REPLACE_VST2=0
 )
+
+if(MSVC)
+    target_compile_options(ArtistStudioStemLabVST3 PRIVATE /utf-8)
+endif()
 
 target_link_libraries(ArtistStudioStemLabVST3 PRIVATE
     juce::juce_audio_processors
