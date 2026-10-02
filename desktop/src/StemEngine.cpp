@@ -116,6 +116,7 @@ void StemEngine::startEngineSetup (SetupCompletion completion)
 void StemEngine::startSeparation (juce::File sourceFile,
                                   juce::File outputRoot,
                                   bool maximumQuality,
+                                  ProgressCallback progress,
                                   Completion completion)
 {
     if (isThreadRunning())
@@ -124,10 +125,16 @@ void StemEngine::startSeparation (juce::File sourceFile,
     source = std::move (sourceFile);
     output = std::move (outputRoot);
     maxQuality = maximumQuality;
+    onProgress = std::move (progress);
     onComplete = std::move (completion);
     launcher = detectDemucsLauncher();
     job = Job::separation;
     startThread();
+}
+
+void StemEngine::requestCancel()
+{
+    signalThreadShouldExit();
 }
 
 void StemEngine::cancel()
@@ -276,6 +283,46 @@ void StemEngine::runSetup()
     });
 }
 
+void StemEngine::publishProgress (double progress, const juce::String& message)
+{
+    auto callback = onProgress;
+    if (! callback)
+        return;
+
+    const auto clamped = juce::jlimit (0.0, 1.0, progress);
+    juce::MessageManager::callAsync ([callback = std::move (callback), clamped, message]
+    {
+        callback (clamped, message);
+    });
+}
+
+double StemEngine::extractProgress (const juce::String& text)
+{
+    double best = -1.0;
+    for (int percent = 0; percent < text.length(); ++percent)
+    {
+        if (text[percent] != '%')
+            continue;
+
+        int begin = percent - 1;
+        while (begin >= 0 && juce::CharacterFunctions::isWhitespace (text[begin]))
+            --begin;
+
+        const int end = begin;
+        while (begin >= 0 && juce::CharacterFunctions::isDigit (text[begin]))
+            --begin;
+
+        const auto digits = text.substring (begin + 1, end + 1);
+        if (digits.isNotEmpty())
+        {
+            const int value = digits.getIntValue();
+            if (value >= 0 && value <= 100)
+                best = juce::jmax (best, value / 100.0);
+        }
+    }
+    return best;
+}
+
 void StemEngine::runSeparation()
 {
     StemSeparationResult result;
@@ -297,6 +344,8 @@ void StemEngine::runSeparation()
                            + " --out " + quote (output.getFullPathName())
                            + " " + quote (source.getFullPathName());
 
+        publishProgress (0.02, "Starting " + model + " separation...");
+
         juce::ChildProcess process;
         if (! process.start (command))
         {
@@ -305,9 +354,22 @@ void StemEngine::runSeparation()
         else
         {
             juce::String log;
+            double lastProgress = 0.02;
+
             while (process.isRunning() && ! threadShouldExit())
             {
-                log << process.readAllProcessOutput();
+                const auto chunk = process.readAllProcessOutput();
+                if (chunk.isNotEmpty())
+                {
+                    log << chunk;
+                    const auto parsed = extractProgress (chunk);
+                    if (parsed >= 0.0 && parsed > lastProgress + 0.005)
+                    {
+                        lastProgress = juce::jmin (0.97, parsed);
+                        publishProgress (lastProgress,
+                                         "Separating stems... " + juce::String ((int) std::round (lastProgress * 100.0)) + "%");
+                    }
+                }
                 wait (150);
             }
 
@@ -315,11 +377,13 @@ void StemEngine::runSeparation()
             {
                 process.kill();
                 result.error = "Stem separation cancelled.";
+                publishProgress (0.0, "Separation cancelled.");
             }
             else
             {
                 process.waitForProcessToFinish (-1);
-                log << process.readAllProcessOutput();
+                const auto finalChunk = process.readAllProcessOutput();
+                log << finalChunk;
                 result.log = log;
 
                 if (process.getExitCode() != 0)
@@ -328,6 +392,7 @@ void StemEngine::runSeparation()
                 }
                 else
                 {
+                    publishProgress (0.99, "Finalizing WAV stems...");
                     const auto songFolder = output.getChildFile (model).getChildFile (source.getFileNameWithoutExtension());
                     result.outputDirectory = songFolder;
                     result.vocals = songFolder.getChildFile ("vocals.wav");
@@ -341,12 +406,15 @@ void StemEngine::runSeparation()
 
                     if (! result.ok)
                         result.error = "Demucs finished, but one or more expected WAV stems were not found.";
+                    else
+                        publishProgress (1.0, "Four stems ready.");
                 }
             }
         }
     }
 
     auto completion = onComplete;
+    onProgress = {};
     juce::MessageManager::callAsync ([completion = std::move (completion), result = std::move (result)] () mutable
     {
         if (completion)
